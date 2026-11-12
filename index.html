@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Riyaz Guru</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">Riyaz Guru <span>shruti · raga · taal practice companion</span></div>
+  <div class="status" id="status">Mic off</div>
+  <button id="btnMic" class="primary">Start mic</button>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="now">
+      <div class="swara-big"><span id="swaraBig">—</span><small id="swaraOct"></small></div>
+      <div class="swara-sub" id="swaraSub">Start the mic, pick your Sa, and sing.</div>
+      <div class="meter"><div class="needle" id="needle"></div></div>
+      <div class="cents-row"><b id="centsText">0 ¢</b><span id="hzText"></span><span id="westernText"></span></div>
+      <div class="hint" id="liveHint"></div>
+    </div>
+    <canvas id="pitchCanvas"></canvas>
+    <div class="taal" id="taalStrip"></div>
+    <div class="taal-fb" id="taalFb">Tabla off. Press <kbd>Space</kbd> to tap along once it is running.</div>
+  </section>
+
+  <aside class="controls">
+    <div class="panel">
+      <h3>Sa &amp; Raga</h3>
+      <div class="row">
+        <label>Sa (tonic)</label>
+        <select id="saNote"></select>
+        <select id="saOct"></select>
+        <button id="btnDetectSa" class="small" title="Sing and hold your Sa for 3 seconds">Detect</button>
+      </div>
+      <div class="row tight info"><span id="saInfo"></span></div>
+      <div class="row">
+        <label>Raga</label>
+        <select id="ragaSel"></select>
+      </div>
+      <div class="row tight info mono" id="ragaInfo"></div>
+      <div class="row">
+        <label>Tuning</label>
+        <select id="tuningSel">
+          <option value="ji">Just intonation (tanpura / voice)</option>
+          <option value="et">Equal temperament (harmonium)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Mic</h3>
+      <div class="row"><label>Sensitivity</label><input type="range" id="sens" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="row">
+        <label><input type="checkbox" id="showAll"> show all 12 swara lines</label>
+        <button id="btnTest" class="small right" title="Plays a synthetic voice through the analyser so you can see the display work without singing">Test tone</button>
+      </div>
+      <div class="row tight info">Use headphones or keep the speaker away from the mic so the tanpura is not mistaken for your voice.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Tanpura <button id="btnTanpura" class="small right">Off</button></h3>
+      <div class="row">
+        <label>Drone</label>
+        <select id="droneSel">
+          <option value="auto">Follow raga</option>
+          <option value="P">Pa – Sa – Sa – Sa</option>
+          <option value="m">Ma – Sa – Sa – Sa</option>
+          <option value="N">Ni – Sa – Sa – Sa</option>
+        </select>
+      </div>
+      <div class="row"><label>Volume</label><input type="range" id="tanpuraVol" min="0" max="1" step="0.01" class="grow"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Tabla <button id="btnTabla" class="small right">Off</button></h3>
+      <div class="row">
+        <label>Taal</label>
+        <select id="taalSel"></select>
+      </div>
+      <div class="row">
+        <label>Laya</label>
+        <input type="range" id="bpm" min="30" max="300" step="1" class="grow">
+        <input type="number" id="bpmNum" min="30" max="300" step="1" style="width:64px">
+        <span class="info">bpm</span>
+      </div>
+      <div class="row"><label>Volume</label><input type="range" id="tablaVol" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="row">
+        <label>Latency</label>
+        <input type="range" id="latency" min="0" max="200" step="5" class="grow">
+        <span class="info mono" id="latencyText"></span>
+      </div>
+      <div class="row"><button id="btnTap" class="small">Tap beat (Space)</button><span class="info" id="tapFb"></span></div>
+    </div>
+
+    <div class="panel">
+      <h3>Sargam drill <button id="btnDrill" class="small right">Start</button></h3>
+      <div class="row">
+        <label>Pattern</label>
+        <select id="patternSel"></select>
+      </div>
+      <div class="row">
+        <label>Per swara</label>
+        <select id="perNoteSel">
+          <option value="1">1 matra</option>
+          <option value="2">2 matras</option>
+          <option value="4">4 matras</option>
+        </select>
+      </div>
+      <div class="drill-target" id="drillTarget"><small>Pick a pattern and press Start. The drill begins on the next sam.</small></div>
+      <div class="drill-notes" id="drillNotes"></div>
+      <div class="info" id="drillSummary"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Guru report <span class="right"><button id="btnReport" class="small">Show</button> <button id="btnResetReport" class="small">Reset</button></span></h3>
+      <ul class="report" id="reportBox"></ul>
+    </div>
+  </aside>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

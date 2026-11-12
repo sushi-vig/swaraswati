@@ -8,7 +8,7 @@ import { Guru } from './guru.js';
 import { Drill, buildPatterns } from './drill.js';
 
 const $ = (id) => document.getElementById(id);
-const LS = 'riyaz-guru-settings-v1';
+const LS = 'swaraswati-settings-v1';
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1 };
 const settings = Object.assign({}, defaults, load());
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
@@ -155,7 +155,7 @@ function resize() {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 const yOf = (c) => chh - ((c - view.lo) / (view.hi - view.lo)) * chh;
-const devColor = (d) => (Math.abs(d) <= 15 ? '#3ecf8e' : Math.abs(d) <= 35 ? '#f5c04e' : '#f0616d');
+const devColor = (d) => (Math.abs(d) <= 15 ? '#3e7a4f' : Math.abs(d) <= 35 ? '#b07a1f' : '#a5301f');
 
 function draw() {
   resize();
@@ -178,23 +178,23 @@ function draw() {
     view.lo += (lo - view.lo) * 0.05; view.hi += (hi - view.hi) * 0.05;
   }
 
-  g.fillStyle = '#0a0c10'; g.fillRect(0, 0, cw, chh);
+  g.fillStyle = '#f6eedb'; g.fillRect(0, 0, cw, chh);
 
   // beat grid
   if (tabla && tabla.running) {
     for (const ev of tabla.events) {
       const x = xOf(ev.t); if (x < LABEL_W || x > cw) continue;
       const meta = tabla.meta[ev.matra];
-      g.strokeStyle = ev.matra === 0 ? 'rgba(232,163,61,0.45)' : meta.startsVibhag ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.07)';
+      g.strokeStyle = ev.matra === 0 ? 'rgba(125,42,30,0.55)' : meta.startsVibhag ? 'rgba(60,40,20,0.28)' : 'rgba(60,40,20,0.12)';
       g.lineWidth = ev.matra === 0 ? 2 : 1;
       g.beginPath(); g.moveTo(x, 0); g.lineTo(x, chh); g.stroke();
-      if (ev.matra === 0) { g.fillStyle = 'rgba(232,163,61,0.8)'; g.font = '10px sans-serif'; g.fillText('sam', x + 3, 11); }
+      if (ev.matra === 0) { g.fillStyle = 'rgba(125,42,30,0.9)'; g.font = 'italic 11px "Crimson Pro", Georgia, serif'; g.fillText('sam', x + 4, 12); }
     }
   }
 
   // swara lines
   const cm = cmap();
-  g.font = '12px sans-serif'; g.textBaseline = 'middle';
+  g.font = '600 13px "Cormorant Garamond", Georgia, serif'; g.textBaseline = 'middle';
   for (let oct = -2; oct <= 2; oct++) {
     for (const sw of SWARA_ORDER) {
       const c = cm[sw] + oct * 1200;
@@ -203,10 +203,10 @@ function draw() {
       if (!inRaga && !settings.showAll) continue;
       const y = yOf(c), isS = sw === 'S';
       g.setLineDash(inRaga ? [] : [3, 5]);
-      g.strokeStyle = isS ? 'rgba(240,179,90,0.65)' : inRaga ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.09)';
+      g.strokeStyle = isS ? 'rgba(139,90,26,0.75)' : inRaga ? 'rgba(60,40,20,0.32)' : 'rgba(60,40,20,0.13)';
       g.lineWidth = isS ? 1.5 : 1;
       g.beginPath(); g.moveTo(LABEL_W, y); g.lineTo(cw, y); g.stroke();
-      g.fillStyle = isS ? '#f0b35a' : inRaga ? '#c9cfdb' : '#596275';
+      g.fillStyle = isS ? '#8b5a1a' : inRaga ? '#2a1f17' : '#a08f74';
       g.fillText(swaraLabel(sw, oct), 6, y);
     }
   }
@@ -217,12 +217,12 @@ function draw() {
     const i = drill.indexAt(now);
     if (i >= 0 && i < drill.notes.length) {
       const y = yOf(drill.notes[i].cents), h = Math.abs(yOf(0) - yOf(40));
-      g.fillStyle = 'rgba(232,163,61,0.13)'; g.fillRect(LABEL_W, y - h / 2, cw - LABEL_W, h);
+      g.fillStyle = 'rgba(180,138,60,0.2)'; g.fillRect(LABEL_W, y - h / 2, cw - LABEL_W, h);
     }
   }
 
   // trace: neutral path, then colour-coded squares
-  g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1.5; g.beginPath();
+  g.strokeStyle = 'rgba(42,31,23,0.45)'; g.lineWidth = 1.5; g.beginPath();
   let pen = false, prevT = 0;
   for (let k = 0; k < hCount; k++) {
     const i = (hHead - 1 - k + N) % N;
@@ -245,7 +245,7 @@ function draw() {
   // onset markers along the bottom
   for (const o of onsets) {
     const x = xOf(o.t); if (x < LABEL_W) continue;
-    g.fillStyle = o.offsetMs == null ? 'rgba(255,255,255,0.4)' : Math.abs(o.offsetMs) <= 60 ? '#3ecf8e' : Math.abs(o.offsetMs) <= 120 ? '#f5c04e' : 'rgba(240,97,109,0.7)';
+    g.fillStyle = o.offsetMs == null ? 'rgba(42,31,23,0.35)' : Math.abs(o.offsetMs) <= 60 ? '#3e7a4f' : Math.abs(o.offsetMs) <= 120 ? '#b07a1f' : 'rgba(165,48,31,0.8)';
     g.beginPath(); g.moveTo(x, chh); g.lineTo(x - 4, chh - 7); g.lineTo(x + 4, chh - 7); g.fill();
   }
 
@@ -530,4 +530,4 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.riyazDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0 });

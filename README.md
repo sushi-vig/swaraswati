@@ -1,4 +1,4 @@
-# Riyaz Guru
+# Swaraswati
 
 A browser-based practice companion for Hindustani classical vocal riyaz: a shruti (pitch) monitor,
 a synthesised tanpura, a synthesised tabla with the common taals, sargam drills, and a "guru" panel

@@ -91,3 +91,10 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 .report li.good { color: var(--good); } .report li.warn { color: var(--warn); } .report li.bad { color: var(--bad); }
 .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
 kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 3px; padding: 0 5px; font-size: 12px; font-family: var(--serif); }
+@media (max-width: 600px) {
+  header { padding: 10px 14px 8px; }
+  .brand { font-size: 26px; }
+  .brand span:not(.dev), .status { display: none; }
+  .now { grid-template-columns: 1fr; }
+  .swara-big { grid-row: auto; justify-content: center; }
+}

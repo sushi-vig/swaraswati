@@ -90,6 +90,7 @@ async function toggleMic() {
     if (testTone) stopTestTone();
     tracker.setInput(micSource);
     micOn = true;
+    connectMicToRec();
     $('btnMic').textContent = 'Stop mic'; $('btnMic').classList.add('on');
     setStatus();
   } catch (err) {
@@ -577,35 +578,180 @@ function showReport() {
   for (const l of guru.report(ragaCtx)) { const li = document.createElement('li'); li.className = l.cls; li.textContent = l.text; box.appendChild(li); }
 }
 
-function init() {
-  fillSelect($('saNote'), NOTE_NAMES.map((n, i) => ({ value: i, label: n })), 0);
-  fillSelect($('saOct'), [2, 3, 4, 5].map((o) => ({ value: o, label: `octave ${o}` })), 3);
-  fillSelect($('ragaSel'), RAGAS.map((r) => ({ value: r.id, label: r.thaat && r.thaat !== '—' ? `${r.name} (${r.thaat})` : r.name })), settings.raga);
-  fillSelect($('taalSel'), TAALS.map((t) => ({ value: t.id, label: t.name })), settings.taal);
-  $('tuningSel').value = settings.tuning;
+
+// ---------- presets ----------
+const PRESETS_KEY = 'swaraswati-presets-v1';
+const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'tanpuras', 'sm'];
+let presets = [];
+function loadPresets() { try { presets = JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { presets = []; } if (!Array.isArray(presets)) presets = []; }
+function savePresets() { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* full or private */ } }
+const snapshot = () => { const o = {}; for (const k of PRESET_FIELDS) o[k] = JSON.parse(JSON.stringify(settings[k])); return o; };
+const presetDefaultName = () => `${raga().name} · Sa ${noteName(settings.saMidi)} · ${taal().name.replace(/ \(\d+\)/, '')} ${settings.bpm}`;
+function refreshPresetList(selectName) {
+  fillSelect($('presetSel'), presets.length ? presets.map((p) => ({ value: p.name, label: p.name })) : [{ value: '', label: 'no presets saved yet' }], selectName ?? (presets[0] && presets[0].name) ?? '');
+  $('btnPresetLoad').disabled = $('btnPresetDelete').disabled = !presets.length;
+  $('presetName').placeholder = presetDefaultName();
+}
+function applyPreset(p) {
+  const v = p.settings || {};
+  for (const k of PRESET_FIELDS) {
+    if (!(k in v)) continue;
+    if (k === 'tanpuras' && Array.isArray(v.tanpuras)) v.tanpuras.forEach((t, i) => { if (settings.tanpuras[i]) Object.assign(settings.tanpuras[i], t); });
+    else if (k === 'sm') Object.assign(settings.sm, v.sm);
+    else settings[k] = v[k];
+  }
+  save();
+  if (drill.active) stopDrill();
+  syncUI();
+  $('presetInfo').textContent = `Loaded “${p.name}”.`;
+}
+function initPresets() {
+  loadPresets(); refreshPresetList();
+  $('btnPresetSave').onclick = () => {
+    const name = ($('presetName').value.trim() || presetDefaultName()).slice(0, 80);
+    const existing = presets.findIndex((p) => p.name === name);
+    const p = { name, savedAt: new Date().toISOString(), settings: snapshot() };
+    if (existing >= 0) presets[existing] = p; else presets.unshift(p);
+    savePresets(); refreshPresetList(name); $('presetName').value = '';
+    $('presetInfo').textContent = `${existing >= 0 ? 'Updated' : 'Saved'} “${name}”.`;
+  };
+  $('btnPresetLoad').onclick = () => { const p = presets.find((x) => x.name === $('presetSel').value); if (p) applyPreset(p); };
+  $('presetSel').ondblclick = $('btnPresetLoad').onclick;
+  $('btnPresetDelete').onclick = () => {
+    const i = presets.findIndex((x) => x.name === $('presetSel').value); if (i < 0) return;
+    const [gone] = presets.splice(i, 1); savePresets(); refreshPresetList();
+    $('presetInfo').textContent = `Deleted “${gone.name}”.`;
+  };
+  $('btnPresetExport').onclick = () => {
+    const data = { app: 'swaraswati', version: 1, exported: new Date().toISOString(), presets: presets.length ? presets : [{ name: presetDefaultName(), savedAt: new Date().toISOString(), settings: snapshot() }] };
+    downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `swaraswati-presets-${stamp()}.json`);
+    $('presetInfo').textContent = presets.length ? `Exported ${presets.length} preset${presets.length > 1 ? 's' : ''}.` : 'Exported the current setup as a preset file.';
+  };
+  $('btnPresetImport').onclick = () => $('presetFile').click();
+  $('presetFile').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const list = Array.isArray(data) ? data : Array.isArray(data.presets) ? data.presets : data.settings ? [data] : null;
+      if (!list) throw new Error('not a Swaraswati preset file');
+      let added = 0, updated = 0;
+      for (const p of list) {
+        if (!p || typeof p.name !== 'string' || typeof p.settings !== 'object') continue;
+        const clean = { name: p.name.slice(0, 80), savedAt: p.savedAt || new Date().toISOString(), settings: {} };
+        for (const k of PRESET_FIELDS) if (k in p.settings) clean.settings[k] = p.settings[k];
+        const i = presets.findIndex((x) => x.name === clean.name);
+        if (i >= 0) { presets[i] = clean; updated++; } else { presets.push(clean); added++; }
+      }
+      savePresets(); refreshPresetList();
+      $('presetInfo').textContent = `Imported ${added} new, ${updated} updated.`;
+    } catch (err) { $('presetInfo').textContent = `Could not import: ${err.message}`; }
+  };
+}
+const stamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; };
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 2000);
+}
+
+// ---------- recording ----------
+let recDest = null, recMicGain = null, recorder = null, recChunks = [], recStart = 0, recTimer = null, recCount = 0;
+function recGraph() {
+  if (recDest) return;
+  recDest = ctx.createMediaStreamDestination();
+  master.connect(recDest);
+  recMicGain = ctx.createGain(); recMicGain.gain.value = 1.0; recMicGain.connect(recDest);
+}
+function connectMicToRec() {
+  if (!recorder || !micSource || !recMicGain || !$('recMic').checked) return;
+  try { micSource.connect(recMicGain); } catch { /* already connected */ }
+}
+const recMime = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+function toggleRecording() {
+  if (recorder) { recorder.stop(); return; }
+  if (!window.MediaRecorder) { $('recInfo').textContent = 'This browser cannot record audio (no MediaRecorder).'; return; }
+  audio(); recGraph();
+  const mimeType = recMime();
+  try { recorder = new MediaRecorder(recDest.stream, mimeType ? { mimeType } : undefined); }
+  catch (err) { $('recInfo').textContent = `Could not start recording: ${err.message}`; recorder = null; return; }
+  recChunks = []; recStart = ctx.currentTime;
+  const includeMic = $('recMic').checked;
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const type = recorder.mimeType || mimeType || 'audio/webm';
+    const blob = new Blob(recChunks, { type });
+    const dur = ctx.currentTime - recStart;
+    clearInterval(recTimer); recorder = null;
+    if (micSource && recMicGain) { try { micSource.disconnect(recMicGain); } catch { /* not connected */ } }
+    $('btnRec').textContent = '● Record'; $('btnRec').classList.remove('rec');
+    addRecording(blob, dur, type, includeMic);
+    setStatus();
+  };
+  connectMicToRec();
+  recorder.start(1000);
+  $('btnRec').textContent = '■ 0:00'; $('btnRec').classList.add('rec');
+  recTimer = setInterval(() => { const sec = Math.floor(ctx.currentTime - recStart); $('btnRec').textContent = `■ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }, 500);
+  $('recInfo').textContent = includeMic ? (micOn ? 'Recording the mix and your voice.' : 'Recording the mix. Start the mic to add your voice.') : 'Recording the accompaniment mix only.';
+}
+function addRecording(blob, dur, type, withMic) {
+  recCount++;
+  const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
+  const name = `swaraswati-${stamp()}-${raga().name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${ext}`;
+  const url = URL.createObjectURL(blob);
+  const li = document.createElement('li');
+  const mm = Math.floor(dur / 60), ss = String(Math.round(dur % 60)).padStart(2, '0');
+  li.innerHTML = `<span>Take ${recCount} · ${mm}:${ss} · ${raga().name}${withMic ? '' : ' · mix only'} · ${(blob.size / 1048576).toFixed(1)} MB</span><a href="${url}" download="${name}">Download</a><audio controls preload="metadata" src="${url}"></audio>`;
+  $('recList').prepend(li);
+  $('recInfo').textContent = `Saved take ${recCount}. Press Download to keep it; recordings are lost when the page closes.`;
+}
+function saveReport() {
+  const lines = guru.report(ragaCtx);
+  const text = [`Swaraswati guru report · ${new Date().toLocaleString()}`, `Sa ${noteName(settings.saMidi)}${settings.saCents ? ` ${settings.saCents > 0 ? '+' : ''}${settings.saCents}¢` : ''} · ${raga().name} · ${taal().name} @ ${settings.bpm}`, ''].concat(lines.map((l) => l.text)).join('\n') + '\n';
+  showReport();
+  downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `swaraswati-report-${stamp()}.txt`);
+}
+
+// Push every setting into its control. Called at start and after a preset loads.
+function syncUI() {
+  $('ragaSel').value = settings.raga; $('taalSel').value = settings.taal; $('tuningSel').value = settings.tuning;
   settings.tanpuras.forEach((tp, k) => {
-    fillSelect($('tpVoice' + k), Object.entries(VOICES).map(([v, o]) => ({ value: v, label: o.label })), tp.voice);
-    fillSelect($('tpString' + k), [{ value: 'auto', label: 'Follow raga' }].concat(Object.entries(FIRST_STRING).map(([v, o]) => ({ value: v, label: `${o.label} – Sa – Sa – Sa` }))), tp.string);
+    $('tpVoice' + k).value = tp.voice; $('tpString' + k).value = tp.string;
     $('tpVol' + k).value = tp.vol; $('tpTempo' + k).value = tp.tempo; $('tpJawari' + k).value = tp.jawari; $('tpFine' + k).value = tp.fine; $('tpPan' + k).value = tp.pan;
     $('tpFineText' + k).textContent = `${tp.fine > 0 ? '+' : ''}${tp.fine} ¢`;
-    const upd = (key, parse = Number) => (e) => { tp[key] = parse(e.target.value); save(); if (key === 'fine') $('tpFineText' + k).textContent = `${tp.fine > 0 ? '+' : ''}${tp.fine} ¢`; applyAudioSettings(); };
-    $('tpVoice' + k).onchange = upd('voice', String); $('tpString' + k).onchange = upd('string', String);
-    $('tpVol' + k).oninput = upd('vol'); $('tpTempo' + k).oninput = upd('tempo'); $('tpJawari' + k).oninput = upd('jawari'); $('tpFine' + k).oninput = upd('fine'); $('tpPan' + k).oninput = upd('pan');
-    $('btnTanpura' + k).onclick = () => toggleTanpura(k);
   });
   $('smAuto').value = settings.sm.auto; $('smRange').value = settings.sm.range; $('smDir').value = settings.sm.dir; $('smGap').value = settings.sm.gap; $('smVol').value = settings.sm.vol;
   $('smGapText').textContent = `${settings.sm.gap} ms`;
-  const smUpd = (key) => (e) => { settings.sm[key] = Number(e.target.value); save(); if (key === 'gap') $('smGapText').textContent = `${settings.sm.gap} ms`; if (ctx) applyAudioSettings(); else if (key === 'auto' || key === 'range') $('smInfo').textContent = ''; };
-  $('smAuto').onchange = smUpd('auto'); $('smRange').onchange = smUpd('range'); $('smDir').onchange = smUpd('dir'); $('smGap').oninput = smUpd('gap'); $('smVol').oninput = smUpd('vol');
-  $('btnStrum').onclick = () => strum();
-  $('sens').value = settings.sensitivity;
+  $('sens').value = settings.sensitivity; if (tracker) tracker.setSensitivity(settings.sensitivity);
   $('showAll').checked = settings.showAll;
   $('tablaVol').value = settings.tablaVol;
   $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
   $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
   $('latency').value = settings.latencyMs; $('latencyText').textContent = `${settings.latencyMs} ms`;
   $('perNoteSel').value = settings.perNote;
-  refreshSa(); refreshRaga(); buildTaalStrip();
+  setZoom(settings.zoom);
+  refreshSa(); refreshRaga(); buildTaalStrip(); setStatus();
+}
+
+function init() {
+  fillSelect($('saNote'), NOTE_NAMES.map((n, i) => ({ value: i, label: n })), 0);
+  fillSelect($('saOct'), [2, 3, 4, 5].map((o) => ({ value: o, label: `octave ${o}` })), 3);
+  fillSelect($('ragaSel'), RAGAS.map((r) => ({ value: r.id, label: r.thaat && r.thaat !== '—' ? `${r.name} (${r.thaat})` : r.name })), settings.raga);
+  fillSelect($('taalSel'), TAALS.map((t) => ({ value: t.id, label: t.name })), settings.taal);
+  settings.tanpuras.forEach((tp, k) => {
+    fillSelect($('tpVoice' + k), Object.entries(VOICES).map(([v, o]) => ({ value: v, label: o.label })), tp.voice);
+    fillSelect($('tpString' + k), [{ value: 'auto', label: 'Follow raga' }].concat(Object.entries(FIRST_STRING).map(([v, o]) => ({ value: v, label: `${o.label} – Sa – Sa – Sa` }))), tp.string);
+    const upd = (key, parse = Number) => (e) => { tp[key] = parse(e.target.value); save(); if (key === 'fine') $('tpFineText' + k).textContent = `${tp.fine > 0 ? '+' : ''}${tp.fine} ¢`; applyAudioSettings(); };
+    $('tpVoice' + k).onchange = upd('voice', String); $('tpString' + k).onchange = upd('string', String);
+    $('tpVol' + k).oninput = upd('vol'); $('tpTempo' + k).oninput = upd('tempo'); $('tpJawari' + k).oninput = upd('jawari'); $('tpFine' + k).oninput = upd('fine'); $('tpPan' + k).oninput = upd('pan');
+    $('btnTanpura' + k).onclick = () => toggleTanpura(k);
+  });
+  const smUpd = (key) => (e) => { settings.sm[key] = Number(e.target.value); save(); if (key === 'gap') $('smGapText').textContent = `${settings.sm.gap} ms`; if (ctx) applyAudioSettings(); else if (key === 'auto' || key === 'range') $('smInfo').textContent = ''; };
+  $('smAuto').onchange = smUpd('auto'); $('smRange').onchange = smUpd('range'); $('smDir').onchange = smUpd('dir'); $('smGap').oninput = smUpd('gap'); $('smVol').oninput = smUpd('vol');
+  $('btnStrum').onclick = () => strum();
+  syncUI();
+  initPresets();
+  $('btnRec').onclick = toggleRecording;
+  $('recMic').onchange = (e) => { if (!recorder) return; if (e.target.checked) connectMicToRec(); else if (micSource && recMicGain) { try { micSource.disconnect(recMicGain); } catch { /* not connected */ } } };
+  $('btnSaveReport').onclick = saveReport;
 
   const onSa = () => { settings.saMidi = (Number($('saOct').value) + 1) * 12 + Number($('saNote').value); save(); refreshSa(); };
   $('saNote').onchange = onSa; $('saOct').onchange = onSa;
@@ -635,7 +781,6 @@ function init() {
   $('btnResetReport').onclick = () => { guru.reset(); $('reportBox').innerHTML = ''; };
 
   // zoom: buttons, ⌘/Ctrl+wheel or trackpad pinch over the trace, keyboard + / - / 0
-  setZoom(settings.zoom);
   $('zoomIn').onclick = () => setZoom(zoom() * 1.25);
   $('zoomOut').onclick = () => setZoom(zoom() / 1.25);
   $('zoomReset').onclick = () => setZoom(1);
@@ -660,6 +805,7 @@ function init() {
     else if (e.key === 't' || e.key === 'T') toggleTabla();
     else if (e.key === 'd' || e.key === 'D') toggleTanpura(0);
     else if (e.key === 's' || e.key === 'S') strum();
+    else if (e.key === 'r' || e.key === 'R') toggleRecording();
     else if (e.key === 'm' || e.key === 'M') toggleMic();
     else if (e.key === '+' || e.key === '=') setZoom(zoom() * 1.25);
     else if (e.key === '-' || e.key === '_') setZoom(zoom() / 1.25);

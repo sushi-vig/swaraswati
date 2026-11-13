@@ -114,3 +114,11 @@ kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 
 .sub .row > label { min-width: 52px; font-size: 12.5px; }
 .sub .row select { font-size: 13px; padding: 3px 5px; }
 @media (max-width: 600px) { .pair { grid-template-columns: 1fr; } }
+
+input[type=text] { background: var(--paper2); color: var(--ink); border: 1px solid var(--rule2); border-radius: 3px; padding: 5px 7px; font: 15px var(--serif); min-width: 0; }
+.row > label.wide { min-width: 0; }
+.recs { list-style: none; margin: 8px 0 0; padding: 0; }
+.recs li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 6px 0; border-bottom: 1px dotted var(--rule2); font-size: 13.5px; }
+.recs li audio { grid-column: 1 / -1; width: 100%; height: 32px; }
+.recs li a { color: var(--maroon); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; text-decoration: none; }
+button.rec { background: #f3dcd6; border-color: var(--bad); color: var(--bad); }

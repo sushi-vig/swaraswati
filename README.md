@@ -47,6 +47,11 @@ tanpura and tabla are not picked up as "your voice".
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.
 - **Swarmandal** tuned to the raga's swaras over one to three octaves. Strum with the button or `S`; auto-strum on the sam
   every 1, 2, 4 or 8 avartans while the tabla runs.
+- **Presets**: save the whole setup (Sa, raga, tuning, taal, theka, laya, tanpuras, swarmandal, drill) under a name,
+  load it back, export all presets as a JSON file and import them on another device.
+- **Recording** (`R`): records the tanpura, tabla and swarmandal mix plus your voice from the mic into a WebM/Opus file
+  (M4A on Safari) with playback and download. Takes live in memory until downloaded.
+- **Save the guru report** as a text file to send to your teacher.
 
 ## Architecture
 
@@ -80,6 +85,5 @@ Example: `.N R G M D N S'`.
 ## Ideas for later
 
 - Sample-based tabla (record a real set) and lehra.
-- Record and replay a session with the pitch trace.
+- Replay a recording with its pitch trace.
 - Per-raga pakad / chalan drills and meend detection.
-- Export the guru report to share with your teacher.

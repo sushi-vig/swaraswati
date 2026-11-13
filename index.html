@@ -40,6 +40,21 @@
 
   <aside class="controls">
     <div class="panel">
+      <h3>Presets <span class="right"><button id="btnPresetExport" class="small" title="Download all presets as a file">Export</button> <button id="btnPresetImport" class="small" title="Load presets from a file">Import</button></span></h3>
+      <div class="row">
+        <select id="presetSel"></select>
+        <button id="btnPresetLoad" class="small">Load</button>
+        <button id="btnPresetDelete" class="small" title="Delete the selected preset">Delete</button>
+      </div>
+      <div class="row">
+        <input type="text" id="presetName" placeholder="name this setup…" class="grow">
+        <button id="btnPresetSave" class="small">Save</button>
+      </div>
+      <div class="info" id="presetInfo">A preset keeps Sa, raga, tuning, taal, theka, laya, tanpuras, swarmandal and drill choices.</div>
+      <input type="file" id="presetFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="panel">
       <h3>Sa &amp; Raga</h3>
       <div class="row">
         <label>Sa (tonic)</label>
@@ -197,7 +212,14 @@
     </div>
 
     <div class="panel">
-      <h3>Guru report <span class="right"><button id="btnReport" class="small">Show</button> <button id="btnResetReport" class="small">Reset</button></span></h3>
+      <h3>Recording <button id="btnRec" class="small right" title="Record the session (R)">● Record</button></h3>
+      <div class="row tight"><label class="wide"><input type="checkbox" id="recMic" checked> include my voice from the mic</label></div>
+      <div class="info" id="recInfo">Records the tanpura, tabla and swarmandal mix, plus your voice when the mic is on. Files stay on this device until you download them.</div>
+      <ul class="recs" id="recList"></ul>
+    </div>
+
+    <div class="panel">
+      <h3>Guru report <span class="right"><button id="btnReport" class="small">Show</button> <button id="btnSaveReport" class="small" title="Download the report as a text file">Save</button> <button id="btnResetReport" class="small">Reset</button></span></h3>
       <ul class="report" id="reportBox"></ul>
     </div>
   </aside>

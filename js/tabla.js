@@ -1,5 +1,6 @@
 // Synthesised tabla with a look-ahead scheduler. Dayan is tuned to Sa, bayan an octave or two below.
 import { TAALS, matraMeta, thekaOf } from './taals.js';
+import { SampleKit } from './samples.js';
 
 // Bol vocabulary → stroke hits. `at` is a fraction of the bol's own slot.
 const H = (...hits) => [{ at: 0, hits }];
@@ -32,7 +33,12 @@ export class Tabla {
     this.ramp = { step: 0, max: 300 }; // + step bpm every avartan until max
     this.onTempo = null;        // callback(bpm) when the ramp changes the tempo
     this.accent = 1;            // 0..1 how strongly sam/tali are accented
+    this.engine = 'samples';    // 'samples' (recorded strokes) or 'synth'
+    this.kit = new SampleKit(ctx, this.out);
+    this.kit.setSa(this.dayan);
+    this.kitPromise = this.kit.load().then((ok) => { if (this.onKit) this.onKit(ok, this.kit.failed); return ok; });
   }
+  get usingSamples() { return this.engine === 'samples' && this.kit.ready; }
   _noiseBuffer() {
     const b = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
     const d = b.getChannelData(0);
@@ -42,6 +48,7 @@ export class Tabla {
   setSa(hz) {
     let f = hz; while (f < 165) f *= 2; while (f > 440) f /= 2; this.dayan = f;
     let b = hz; while (b > 125) b /= 2; while (b < 62) b *= 2; this.bayan = b;
+    this.kit.setSa(hz);
   }
   setTaal(taal, thekaIdx = 0) {
     const changed = taal !== this.taal;
@@ -121,9 +128,12 @@ export class Tabla {
   _playBols(str, t, dur, vel) {
     const toks = str.split(/\s+/).filter(Boolean), slot = dur / toks.length;
     toks.forEach((bol, i) => {
-      for (const s of strokesFor(bol)) for (const h of s.hits) this[h](t + i * slot + s.at * slot, vel);
+      for (const s of strokesFor(bol)) for (const h of s.hits) this[h](t + i * slot + s.at * slot, vel, slot);
     });
   }
+
+  // --- sampled strokes (fall through to the synth when the kit is off or not loaded) ---
+  _s(name, t, v, slot, opts) { return this.usingSamples && this.kit.play(name, t, v, slot, opts); }
 
   // --- stroke synthesis ---
   _partials(t, f, parts, vel) {
@@ -142,27 +152,36 @@ export class Tabla {
     const g = ctx.createGain(); g.gain.setValueAtTime(vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f).connect(g).connect(this.out); s.start(t, Math.random() * 0.8); s.stop(t + dur + 0.02);
   }
-  na(t, v) {  // open rim stroke: bright, rings at Sa's harmonics
+  na(t, v, slot) {
+    if (this._s('na', t, v, slot)) return;  // open rim stroke: bright, rings at Sa's harmonics
     this._noise(t, 0.02, 'highpass', 3000, 0.7, 0.22 * v);
     this._partials(t, this.dayan, [[1, 0.35, 0.55], [2, 0.55, 0.45], [3, 0.5, 0.5], [4, 0.3, 0.35], [5, 0.2, 0.25], [6.1, 0.1, 0.15]], 0.5 * v);
   }
-  tin(t, v) { // ringing centre stroke, rounder
+  tin(t, v, slot) {
+    if (this._s('tin', t, v, slot)) return; // ringing centre stroke, rounder
     this._noise(t, 0.012, 'highpass', 2500, 0.7, 0.1 * v);
     this._partials(t, this.dayan, [[1, 0.7, 0.6], [2, 0.35, 0.4], [3, 0.15, 0.25]], 0.5 * v);
   }
-  tun(t, v) { // open, long ring
+  tun(t, v, slot) {
+    if (this._s('tun', t, v, slot)) return; // open, long ring
     this._partials(t, this.dayan, [[1, 0.9, 1.0], [2, 0.3, 0.6], [3, 0.12, 0.3]], 0.55 * v);
   }
-  te(t, v) {  // closed dayan slap
+  te(t, v, slot) {
+    if (this._s('te', t, v, slot)) return;  // closed dayan slap
     this._noise(t, 0.05, 'bandpass', 1800, 1.2, 0.7 * v);
     this._partials(t, this.dayan, [[1, 0.15, 0.06], [3, 0.1, 0.05]], v);
   }
-  ke(t, v) {  // closed bayan slap
+  ke(t, v, slot) {
+    if (this._s('ke', t, v, slot)) return;  // closed bayan slap
     this._noise(t, 0.07, 'lowpass', 500, 0.8, 0.9 * v);
     this._partials(t, this.bayan, [[1, 0.3, 0.08]], v);
   }
-  kat(t, v) { this.ke(t, v * 1.1); this._noise(t, 0.04, 'bandpass', 1200, 1, 0.3 * v); }
-  ge(t, v) {  // open bayan with pitch glide (gumki)
+  kat(t, v, slot) {
+    if (this.usingSamples) { this.kit.play('ke', t, v * 1.2, slot); this.kit.play('ge', t, v * 0.9, 0.1, { cut: 0.09, lowpass: 600 }); return; }
+    this.ke(t, v * 1.1); this._noise(t, 0.04, 'bandpass', 1200, 1, 0.3 * v);
+  }
+  ge(t, v, slot) {
+    if (this._s('ge', t, v, slot)) return;  // open bayan with pitch glide (gumki)
     const ctx = this.ctx, b = this.bayan;
     const o = ctx.createOscillator();
     o.frequency.setValueAtTime(b * 1.5, t);

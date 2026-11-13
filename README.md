@@ -1,7 +1,7 @@
 # Swaraswati
 
 A browser-based practice companion for Hindustani classical vocal riyaz: a shruti (pitch) monitor,
-two synthesised tanpuras and a swarmandal, a synthesised tabla with 22 taals and theka variations, sargam drills, and a "guru" panel
+two synthesised tanpuras and a swarmandal, a tabla with real stroke recordings and 22 taals with theka variations, sargam drills, and a "guru" panel
 that tells you which swaras drift, by how much, and when you stray outside the raga.
 
 No build step, no dependencies. Everything is vanilla JS + Web Audio + Canvas.
@@ -52,6 +52,9 @@ tanpura and tabla are not picked up as "your voice".
 - **Recording** (`R`): records the tanpura, tabla and swarmandal mix plus your voice from the mic into a WebM/Opus file
   (M4A on Safari) with playback and download. Takes live in memory until downloaded.
 - **Save the guru report** as a text file to send to your teacher.
+- **Recorded tabla**: 26 real stroke recordings (CC0, from the Sonic Pi sample set, originally Freesound user mmiron)
+  in `samples/tabla/`, pitch-shifted as one drum to your Sa, with round-robin takes and short takes for fast bols.
+  Switch to the synthesised drum under Tabla → Sound. Provenance and licences are in `samples/LICENSES.md`.
 
 ## Architecture
 
@@ -64,7 +67,8 @@ tanpura and tabla are not picked up as "your voice".
 | `js/ragas.js` / `js/taals.js` | Raga and theka data. Add your own here. |
 | `js/tanpura.js` | 4-string tanpura with jawari swell, two voicings, pan and fine tune. |
 | `js/swarmandal.js` | Raga-tuned swarmandal strum. |
-| `js/tabla.js` | Synthesised dayan/bayan strokes, look-ahead scheduler, matra lookup for timing feedback. |
+| `js/tabla.js` | Theka scheduler (layakari, ramp), synthesised dayan/bayan fallback, matra lookup for timing feedback. |
+| `js/samples.js` | Sampled tabla kit: loads `samples/tabla/*.flac`, maps bols to takes, pitch-shifts to Sa. |
 | `js/guru.js` | Per-swara statistics, live hints, session report. |
 | `js/drill.js` | Alankar pattern generation and note-by-note scoring. |
 | `js/app.js` | UI wiring, ring-buffer pitch history, canvas rendering. |
@@ -84,6 +88,6 @@ Example: `.N R G M D N S'`.
 
 ## Ideas for later
 
-- Sample-based tabla (record a real set) and lehra.
+- Sampled tanpura (a CC0 single-string set exists on Freesound) and lehra.
 - Replay a recording with its pitch trace.
 - Per-raga pakad / chalan drills and meend detection.

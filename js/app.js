@@ -13,7 +13,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -38,6 +38,8 @@ function audio() {
     tanpura = tanpuras[0];
     swarmandal = new Swarmandal(ctx, master);
     tabla = new Tabla(ctx, master);
+    tabla.onKit = (ok, why) => { $('kitInfo').textContent = ok ? '26 strokes loaded' : `recordings unavailable (${why}); using the synth`; if (!ok) { $('tablaEngine').value = 'synth'; } };
+    $('kitInfo').textContent = 'loading…';
     applyAudioSettings();
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -57,6 +59,7 @@ function applyAudioSettings() {
   swarmandal.setVolume(settings.sm.vol);
   tabla.setSa(saHz());
   tabla.setTaal(taal(), settings.theka);
+  tabla.engine = settings.tablaEngine;
   tabla.bpm = settings.bpm;
   tabla.layakari = settings.layakari;
   tabla.ramp = { step: settings.rampStep, max: settings.rampMax };
@@ -581,7 +584,7 @@ function showReport() {
 
 // ---------- presets ----------
 const PRESETS_KEY = 'swaraswati-presets-v1';
-const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'tanpuras', 'sm'];
+const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'tanpuras', 'sm'];
 let presets = [];
 function loadPresets() { try { presets = JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { presets = []; } if (!Array.isArray(presets)) presets = []; }
 function savePresets() { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* full or private */ } }
@@ -725,6 +728,7 @@ function syncUI() {
   $('tablaVol').value = settings.tablaVol;
   $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
   $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
+  $('tablaEngine').value = settings.tablaEngine;
   $('latency').value = settings.latencyMs; $('latencyText').textContent = `${settings.latencyMs} ms`;
   $('perNoteSel').value = settings.perNote;
   setZoom(settings.zoom);
@@ -767,6 +771,7 @@ function init() {
   $('bpm').oninput = (e) => onBpm(e.target.value); $('bpmNum').onchange = (e) => onBpm(e.target.value);
   $('btnTapTempo').onclick = tapTempo;
   $('thekaSel').onchange = (e) => { settings.theka = Number(e.target.value); save(); buildTaalStrip(); applyAudioSettings(); };
+  $('tablaEngine').onchange = (e) => { settings.tablaEngine = e.target.value; save(); applyAudioSettings(); };
   $('layakariSel').onchange = (e) => { settings.layakari = Number(e.target.value); save(); applyAudioSettings(); setStatus(); };
   $('rampStep').onchange = (e) => { settings.rampStep = Number(e.target.value); save(); applyAudioSettings(); };
   $('rampMax').onchange = (e) => { settings.rampMax = Math.max(20, Math.min(400, Number(e.target.value) || 160)); $('rampMax').value = settings.rampMax; save(); applyAudioSettings(); };
@@ -817,4 +822,4 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, tanpuras: tanpuras.map((t) => t.running), strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

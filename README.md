@@ -1,7 +1,7 @@
 # Swaraswati
 
 A browser-based practice companion for Hindustani classical vocal riyaz: a shruti (pitch) monitor,
-a synthesised tanpura, a synthesised tabla with 22 taals and theka variations, sargam drills, and a "guru" panel
+two synthesised tanpuras and a swarmandal, a synthesised tabla with 22 taals and theka variations, sargam drills, and a "guru" panel
 that tells you which swaras drift, by how much, and when you stray outside the raga.
 
 No build step, no dependencies. Everything is vanilla JS + Web Audio + Canvas.
@@ -43,6 +43,10 @@ tanpura and tabla are not picked up as "your voice".
 - **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays
   the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
 - **Fine-tune Sa** in cents; the tanpura and tabla follow.
+- **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
+  komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.
+- **Swarmandal** tuned to the raga's swaras over one to three octaves. Strum with the button or `S`; auto-strum on the sam
+  every 1, 2, 4 or 8 avartans while the tabla runs.
 
 ## Architecture
 
@@ -53,7 +57,8 @@ tanpura and tabla are not picked up as "your voice".
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |
 | `js/music.js` | Swara tables (just intonation and equal temperament), token grammar, nearest-swara lookup. |
 | `js/ragas.js` / `js/taals.js` | Raga and theka data. Add your own here. |
-| `js/tanpura.js` | 4-string tanpura with jawari swell. |
+| `js/tanpura.js` | 4-string tanpura with jawari swell, two voicings, pan and fine tune. |
+| `js/swarmandal.js` | Raga-tuned swarmandal strum. |
 | `js/tabla.js` | Synthesised dayan/bayan strokes, look-ahead scheduler, matra lookup for timing feedback. |
 | `js/guru.js` | Per-swara statistics, live hints, session report. |
 | `js/drill.js` | Alankar pattern generation and note-by-note scoring. |

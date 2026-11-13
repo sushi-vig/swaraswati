@@ -107,3 +107,10 @@ kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 
 #ragaInfo { white-space: pre-line; display: block; }
 #taalNote { display: block; font-style: italic; }
 #layaWord { min-width: 88px; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sub { border: 1px solid var(--rule2); padding: 8px 10px; border-radius: 2px; background: rgba(255,255,255,0.25); }
+.sub h4 { margin: 0 0 6px; font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--ink); display: flex; align-items: center; justify-content: space-between; }
+.sub .row > label { min-width: 52px; font-size: 12.5px; }
+.sub .row select { font-size: 13px; padding: 3px 5px; }
+@media (max-width: 600px) { .pair { grid-template-columns: 1fr; } }

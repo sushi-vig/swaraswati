@@ -78,17 +78,56 @@
     </div>
 
     <div class="panel">
-      <h3>Tanpura <button id="btnTanpura" class="small right">Off</button></h3>
+      <h3>Tanpura</h3>
+      <div class="pair">
+      <div class="sub">
+        <h4>Tanpura A <button id="btnTanpura0" class="small">Off</button></h4>
+        <div class="row tight"><label>Voice</label><select id="tpVoice0"></select></div>
+        <div class="row tight"><label>Strings</label><select id="tpString0"></select></div>
+        <div class="row tight"><label>Volume</label><input type="range" id="tpVol0" min="0" max="1" step="0.01" class="grow"></div>
+        <div class="row tight"><label>Speed</label><input type="range" id="tpTempo0" min="0.5" max="2" step="0.05" class="grow"></div>
+        <div class="row tight"><label>Jawari</label><input type="range" id="tpJawari0" min="0" max="1" step="0.05" class="grow"></div>
+        <div class="row tight"><label>Fine</label><input type="range" id="tpFine0" min="-30" max="30" step="1" class="grow"><span class="info mono" id="tpFineText0">0 ¢</span></div>
+        <div class="row tight"><label>Pan</label><input type="range" id="tpPan0" min="-1" max="1" step="0.1" class="grow"></div>
+      </div>
+      <div class="sub">
+        <h4>Tanpura B <button id="btnTanpura1" class="small">Off</button></h4>
+        <div class="row tight"><label>Voice</label><select id="tpVoice1"></select></div>
+        <div class="row tight"><label>Strings</label><select id="tpString1"></select></div>
+        <div class="row tight"><label>Volume</label><input type="range" id="tpVol1" min="0" max="1" step="0.01" class="grow"></div>
+        <div class="row tight"><label>Speed</label><input type="range" id="tpTempo1" min="0.5" max="2" step="0.05" class="grow"></div>
+        <div class="row tight"><label>Jawari</label><input type="range" id="tpJawari1" min="0" max="1" step="0.05" class="grow"></div>
+        <div class="row tight"><label>Fine</label><input type="range" id="tpFine1" min="-30" max="30" step="1" class="grow"><span class="info mono" id="tpFineText1">0 ¢</span></div>
+        <div class="row tight"><label>Pan</label><input type="range" id="tpPan1" min="-1" max="1" step="0.1" class="grow"></div>
+      </div>
+      </div>
+      <div class="info">D toggles tanpura A. Run both, panned apart, for a fuller drone.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Swarmandal <button id="btnStrum" class="small right" title="Strum (S)">Strum</button></h3>
       <div class="row">
-        <label>Drone</label>
-        <select id="droneSel">
-          <option value="auto">Follow raga</option>
-          <option value="P">Pa – Sa – Sa – Sa</option>
-          <option value="m">Ma – Sa – Sa – Sa</option>
-          <option value="N">Ni – Sa – Sa – Sa</option>
+        <label>Auto strum</label>
+        <select id="smAuto">
+          <option value="0">off</option>
+          <option value="1">every sam</option>
+          <option value="2">every 2 avartans</option>
+          <option value="4">every 4 avartans</option>
+          <option value="8">every 8 avartans</option>
         </select>
       </div>
-      <div class="row"><label>Volume</label><input type="range" id="tanpuraVol" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="row">
+        <label>Range</label>
+        <select id="smRange">
+          <option value="2">mandra Pa to taar Pa</option>
+          <option value="3">mandra Sa to taar Sa'</option>
+          <option value="1">madhya Sa to taar Sa</option>
+        </select>
+      </div>
+      <div class="row"><label>Direction</label><select id="smDir"><option value="0">alternate</option><option value="1">upward</option><option value="-1">downward</option></select></div>
+      <div class="row"><label>Speed</label><input type="range" id="smGap" min="15" max="120" step="5" class="grow"><span class="info mono" id="smGapText"></span></div>
+      <div class="row"><label>Volume</label><input type="range" id="smVol" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="info" id="smInfo"></div>
     </div>
 
     <div class="panel">

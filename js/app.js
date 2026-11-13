@@ -1,7 +1,8 @@
 import { SWARA_ORDER, SWARA_NAMES, SWARA_LONG, OCT_NAMES, CENTS_JI, CENTS_ET, NOTE_NAMES, midiToHz, hzToMidi, noteName, nearestSwara, swaraLabel } from './music.js';
 import { RAGAS, ragaSwaraSet, ragaDirectionSets } from './ragas.js';
 import { TAALS, matraMeta, thekaOf, bolLabel } from './taals.js';
-import { Tanpura } from './tanpura.js';
+import { Tanpura, VOICES, FIRST_STRING } from './tanpura.js';
+import { Swarmandal } from './swarmandal.js';
 import { Tabla } from './tabla.js';
 import { PitchTracker } from './pitch.js';
 import { Guru } from './guru.js';
@@ -9,13 +10,22 @@ import { Drill, buildPatterns } from './drill.js';
 
 const $ = (id) => document.getElementById(id);
 const LS = 'swaraswati-settings-v1';
-const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, rampStep: 0, rampMax: 160 };
+const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
+const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
+  tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
+// migrate pre-tanpura-pair settings
+if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
+settings.tanpuras = settings.tanpuras.map((t, i) => Object.assign({}, defaults.tanpuras[i], t));
+if (settings.drone && settings.drone !== 'auto' && !settings.tanpurasMigrated) { settings.tanpuras[0].string = settings.drone; settings.tanpuras[0].vol = settings.tanpuraVol; }
+settings.tanpurasMigrated = true;
+settings.sm = Object.assign({}, defaults.sm, settings.sm || {});
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
 
 // ---------- audio graph ----------
-let ctx = null, master = null, tanpura = null, tabla = null, tracker = null, micStream = null, micSource = null, testTone = null;
+let ctx = null, master = null, tanpura = null, tanpuras = [], swarmandal = null, tabla = null, tracker = null, micStream = null, micSource = null, testTone = null;
 const guru = new Guru();
 const drill = new Drill();
 let micOn = false;
@@ -24,7 +34,9 @@ function audio() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
     master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
-    tanpura = new Tanpura(ctx, master);
+    tanpuras = [new Tanpura(ctx, master), new Tanpura(ctx, master)];
+    tanpura = tanpuras[0];
+    swarmandal = new Swarmandal(ctx, master);
     tabla = new Tabla(ctx, master);
     applyAudioSettings();
   }
@@ -35,13 +47,14 @@ const saHz = () => midiToHz(settings.saMidi + (settings.saCents || 0) / 100);
 const cmap = () => (settings.tuning === 'et' ? CENTS_ET : CENTS_JI);
 const raga = () => RAGAS.find((r) => r.id === settings.raga) || RAGAS[0];
 const taal = () => TAALS.find((t) => t.id === settings.taal) || TAALS[0];
-const droneString = () => (settings.drone === 'auto' ? raga().drone || 'P' : settings.drone);
+const droneString = (k = 0) => { const v = settings.tanpuras[k].string; return v === 'auto' ? raga().drone || 'P' : v; };
 let ragaSet = null, ragaCtx = null;
 
 function applyAudioSettings() {
   if (!ctx) return;
-  tanpura.configure(saHz(), droneString());
-  tanpura.setVolume(settings.tanpuraVol);
+  settings.tanpuras.forEach((tp, k) => { tanpuras[k].configure(saHz(), droneString(k), tp); tanpuras[k].setVolume(tp.vol); });
+  tuneSwarmandal();
+  swarmandal.setVolume(settings.sm.vol);
   tabla.setSa(saHz());
   tabla.setTaal(taal(), settings.theka);
   tabla.bpm = settings.bpm;
@@ -401,6 +414,7 @@ function loop() {
   updateNow();
   updateTaal();
   updateDrill();
+  autoStrum();
   requestAnimationFrame(loop);
 }
 
@@ -435,10 +449,40 @@ function refreshRaga() {
   applyAudioSettings();
 }
 
-function toggleTanpura() {
+function toggleTanpura(k = 0) {
   audio();
-  if (tanpura.running) { tanpura.stop(); $('btnTanpura').textContent = 'Off'; $('btnTanpura').classList.remove('on'); }
-  else { applyAudioSettings(); tanpura.start(); $('btnTanpura').textContent = 'On'; $('btnTanpura').classList.add('on'); }
+  const tp = tanpuras[k], btn = $('btnTanpura' + k);
+  if (tp.running) { tp.stop(); btn.textContent = 'Off'; btn.classList.remove('on'); }
+  else { applyAudioSettings(); tp.start(); btn.textContent = 'On'; btn.classList.add('on'); }
+}
+
+// ---------- swarmandal ----------
+function tuneSwarmandal() {
+  if (!swarmandal) return;
+  const cm = cmap(), set = ragaSet || new Set(SWARA_ORDER);
+  const r = Number(settings.sm.range);
+  const lo = r === 2 ? -500 : r === 3 ? -1200 : 0, hi = r === 2 ? 1900 : r === 3 ? 2400 : 1200;
+  const cents = [];
+  for (let oct = -1; oct <= 2; oct++) for (const sw of SWARA_ORDER) { const c = cm[sw] + oct * 1200; if (set.has(sw) && c >= lo - 1 && c <= hi + 1) cents.push(c); }
+  swarmandal.tune(saHz(), cents);
+  $('smInfo').textContent = `${cents.length} strings tuned to ${ragaSet ? raga().name : 'all 12 swaras'}${settings.sm.auto > 0 ? ' · strums on the sam' + (settings.sm.auto > 1 ? ' every ' + settings.sm.auto + ' avartans' : '') + (tabla && tabla.running ? '' : ' once the tabla runs, else every ' + settings.sm.auto * 8 + ' s') : ''}`;
+}
+let lastAutoStrum = { avartan: -1, t: 0 };
+function strum(at) {
+  audio(); if (!swarmandal.hz.length) tuneSwarmandal();
+  swarmandal.strum(at ?? ctx.currentTime + 0.02, settings.sm.gap, Number(settings.sm.dir));
+}
+function autoStrum() {
+  const every = Number(settings.sm.auto); if (!every || !ctx || !swarmandal) return;
+  const now = ctx.currentTime;
+  if (tabla && tabla.running) {
+    const ns = tabla.nextSam(0.25);
+    if (ns.avartan % every === 0 && ns.avartan !== lastAutoStrum.avartan && ns.t - now < 0.6) {
+      lastAutoStrum = { avartan: ns.avartan, t: ns.t };
+      // start early so the strum lands across the sam
+      strum(Math.max(now + 0.02, ns.t - (swarmandal.hz.length * settings.sm.gap) / 2000));
+    }
+  } else if (now - lastAutoStrum.t > every * 8) { lastAutoStrum = { avartan: -1, t: now }; strum(); }
 }
 
 function toggleTabla() {
@@ -539,10 +583,23 @@ function init() {
   fillSelect($('ragaSel'), RAGAS.map((r) => ({ value: r.id, label: r.thaat && r.thaat !== '—' ? `${r.name} (${r.thaat})` : r.name })), settings.raga);
   fillSelect($('taalSel'), TAALS.map((t) => ({ value: t.id, label: t.name })), settings.taal);
   $('tuningSel').value = settings.tuning;
-  $('droneSel').value = settings.drone;
+  settings.tanpuras.forEach((tp, k) => {
+    fillSelect($('tpVoice' + k), Object.entries(VOICES).map(([v, o]) => ({ value: v, label: o.label })), tp.voice);
+    fillSelect($('tpString' + k), [{ value: 'auto', label: 'Follow raga' }].concat(Object.entries(FIRST_STRING).map(([v, o]) => ({ value: v, label: `${o.label} – Sa – Sa – Sa` }))), tp.string);
+    $('tpVol' + k).value = tp.vol; $('tpTempo' + k).value = tp.tempo; $('tpJawari' + k).value = tp.jawari; $('tpFine' + k).value = tp.fine; $('tpPan' + k).value = tp.pan;
+    $('tpFineText' + k).textContent = `${tp.fine > 0 ? '+' : ''}${tp.fine} ¢`;
+    const upd = (key, parse = Number) => (e) => { tp[key] = parse(e.target.value); save(); if (key === 'fine') $('tpFineText' + k).textContent = `${tp.fine > 0 ? '+' : ''}${tp.fine} ¢`; applyAudioSettings(); };
+    $('tpVoice' + k).onchange = upd('voice', String); $('tpString' + k).onchange = upd('string', String);
+    $('tpVol' + k).oninput = upd('vol'); $('tpTempo' + k).oninput = upd('tempo'); $('tpJawari' + k).oninput = upd('jawari'); $('tpFine' + k).oninput = upd('fine'); $('tpPan' + k).oninput = upd('pan');
+    $('btnTanpura' + k).onclick = () => toggleTanpura(k);
+  });
+  $('smAuto').value = settings.sm.auto; $('smRange').value = settings.sm.range; $('smDir').value = settings.sm.dir; $('smGap').value = settings.sm.gap; $('smVol').value = settings.sm.vol;
+  $('smGapText').textContent = `${settings.sm.gap} ms`;
+  const smUpd = (key) => (e) => { settings.sm[key] = Number(e.target.value); save(); if (key === 'gap') $('smGapText').textContent = `${settings.sm.gap} ms`; if (ctx) applyAudioSettings(); else if (key === 'auto' || key === 'range') $('smInfo').textContent = ''; };
+  $('smAuto').onchange = smUpd('auto'); $('smRange').onchange = smUpd('range'); $('smDir').onchange = smUpd('dir'); $('smGap').oninput = smUpd('gap'); $('smVol').oninput = smUpd('vol');
+  $('btnStrum').onclick = () => strum();
   $('sens').value = settings.sensitivity;
   $('showAll').checked = settings.showAll;
-  $('tanpuraVol').value = settings.tanpuraVol;
   $('tablaVol').value = settings.tablaVol;
   $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
   $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
@@ -554,14 +611,11 @@ function init() {
   $('saNote').onchange = onSa; $('saOct').onchange = onSa;
   $('btnDetectSa').onclick = startDetectSa;
   $('ragaSel').onchange = (e) => { settings.raga = e.target.value; save(); refreshRaga(); };
-  $('tuningSel').onchange = (e) => { settings.tuning = e.target.value; save(); };
+  $('tuningSel').onchange = (e) => { settings.tuning = e.target.value; save(); applyAudioSettings(); };
   $('sens').oninput = (e) => { settings.sensitivity = Number(e.target.value); save(); if (tracker) tracker.setSensitivity(settings.sensitivity); };
   $('showAll').onchange = (e) => { settings.showAll = e.target.checked; save(); };
   $('btnTest').onclick = toggleTestTone;
   $('btnMic').onclick = toggleMic;
-  $('btnTanpura').onclick = toggleTanpura;
-  $('droneSel').onchange = (e) => { settings.drone = e.target.value; save(); applyAudioSettings(); };
-  $('tanpuraVol').oninput = (e) => { settings.tanpuraVol = Number(e.target.value); save(); if (tanpura) tanpura.setVolume(settings.tanpuraVol); };
   $('btnTabla').onclick = toggleTabla;
   $('taalSel').onchange = (e) => { settings.taal = e.target.value; save(); buildTaalStrip(); applyAudioSettings(); if (drill.active) stopDrill(); };
   $('bpm').oninput = (e) => onBpm(e.target.value); $('bpmNum').onchange = (e) => onBpm(e.target.value);
@@ -604,7 +658,8 @@ function init() {
     if (e.target.matches('input, select, textarea')) return;
     if (e.code === 'Space') { e.preventDefault(); tap(); }
     else if (e.key === 't' || e.key === 'T') toggleTabla();
-    else if (e.key === 'd' || e.key === 'D') toggleTanpura();
+    else if (e.key === 'd' || e.key === 'D') toggleTanpura(0);
+    else if (e.key === 's' || e.key === 'S') strum();
     else if (e.key === 'm' || e.key === 'M') toggleMic();
     else if (e.key === '+' || e.key === '=') setZoom(zoom() * 1.25);
     else if (e.key === '-' || e.key === '_') setZoom(zoom() / 1.25);
@@ -616,4 +671,4 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, tanpuras: tanpuras.map((t) => t.running), strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

@@ -90,6 +90,14 @@ export class Tabla {
     if (this.running) consider({ idx: this.nextIdx, matra: this.nextIdx % this.taal.matras, t: this.nextTime });
     return best;
   }
+  // Next sam at least `minAhead` seconds ahead, with its avartan number.
+  nextSam(minAhead = 0.3) {
+    const n = this.taal.matras, now = this.ctx.currentTime;
+    for (const ev of this.events) if (ev.matra === 0 && ev.t >= now + minAhead) return { t: ev.t, avartan: ev.idx / n };
+    let idx = this.nextIdx, t = this.nextTime;
+    while (idx % n !== 0 || t < now + minAhead) { idx++; t += this.matraDur; }
+    return { t, avartan: idx / n };
+  }
   // Next sam at least `minAhead` seconds in the future.
   nextSamTime(minAhead = 0.8) {
     const n = this.taal.matras, now = this.ctx.currentTime;

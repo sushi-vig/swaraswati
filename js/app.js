@@ -1,5 +1,5 @@
 import { SWARA_ORDER, SWARA_NAMES, SWARA_LONG, OCT_NAMES, CENTS_JI, CENTS_ET, NOTE_NAMES, midiToHz, hzToMidi, noteName, nearestSwara, swaraLabel } from './music.js';
-import { RAGAS, ragaSwaraSet } from './ragas.js';
+import { RAGAS, ragaSwaraSet, ragaDirectionSets } from './ragas.js';
 import { TAALS, matraMeta } from './taals.js';
 import { Tanpura } from './tanpura.js';
 import { Tabla } from './tabla.js';
@@ -9,7 +9,7 @@ import { Drill, buildPatterns } from './drill.js';
 
 const $ = (id) => document.getElementById(id);
 const LS = 'swaraswati-settings-v1';
-const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1 };
+const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1 };
 const settings = Object.assign({}, defaults, load());
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
@@ -36,7 +36,7 @@ const cmap = () => (settings.tuning === 'et' ? CENTS_ET : CENTS_JI);
 const raga = () => RAGAS.find((r) => r.id === settings.raga) || RAGAS[0];
 const taal = () => TAALS.find((t) => t.id === settings.taal) || TAALS[0];
 const droneString = () => (settings.drone === 'auto' ? raga().drone || 'P' : settings.drone);
-let ragaSet = null;
+let ragaSet = null, ragaCtx = null;
 
 function applyAudioSettings() {
   if (!ctx) return;
@@ -116,7 +116,7 @@ function onFrame(fr) {
     if (gap > 0.12 || Math.abs(c - lastCents) > 70) registerOnset(t);
     lastVoicedT = t; lastCents = c;
     current = { t, cents: c, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity };
-    guru.addFrame(t, info, rInfo, inRaga, raga().name);
+    guru.addFrame(t, info, rInfo, inRaga, ragaCtx);
     drill.addFrame(t, c, info);
     if (detectSa) detectSa.push(fr.f0);
   } else {
@@ -143,8 +143,16 @@ function registerOnset(t) {
 const cv = $('pitchCanvas');
 const g = cv.getContext('2d', { alpha: false });
 let cw = 0, chh = 0, dpr = 1;
-const LABEL_W = 54, WINDOW_SEC = 12;
+const LABEL_W = 54, BASE_WINDOW_SEC = 12;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 6;
 const view = { lo: -400, hi: 1500 };
+// Zoom: vertical span shrinks with the zoom factor; the time window shrinks more gently.
+const zoom = () => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, settings.zoom || 1));
+const windowSec = () => Math.min(24, Math.max(4, BASE_WINDOW_SEC / Math.sqrt(zoom())));
+function setZoom(z) {
+  settings.zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100; save();
+  $('zoomText').textContent = `${settings.zoom.toFixed(settings.zoom < 1 || settings.zoom % 1 ? 1 : 0)}×`;
+}
 
 function resize() {
   const r = cv.getBoundingClientRect();
@@ -160,6 +168,7 @@ const devColor = (d) => (Math.abs(d) <= 15 ? '#3e7a4f' : Math.abs(d) <= 35 ? '#b
 function draw() {
   resize();
   const now = ctx ? ctx.currentTime : 0;
+  const WINDOW_SEC = windowSec(), z = zoom();
   const pxPerSec = (cw - LABEL_W) / WINDOW_SEC;
   const xOf = (t) => cw - (now - t) * pxPerSec;
   const tMin = now - WINDOW_SEC;
@@ -173,9 +182,16 @@ function draw() {
     if (c < mn) mn = c; if (c > mx) mx = c;
   }
   if (mn !== Infinity) {
-    let lo = mn - 250, hi = mx + 250;
-    if (hi - lo < 1100) { const mid = (lo + hi) / 2; lo = mid - 550; hi = mid + 550; }
+    // Zoomed in: follow the latest pitch tightly; zoomed out: fit every visible point.
+    const pad = 250 / z, minSpan = 1100 / z;
+    let lo, hi;
+    if (z > 1.5 && current) { const span = Math.max(minSpan, (mx - mn) / z + pad); lo = current.cents - span / 2; hi = current.cents + span / 2; }
+    else { lo = mn - pad; hi = mx + pad; if (hi - lo < minSpan) { const mid = (lo + hi) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; } }
     view.lo += (lo - view.lo) * 0.05; view.hi += (hi - view.hi) * 0.05;
+  } else if (Math.abs((view.hi - view.lo) - 1100 / z) > 1) {
+    // nothing sung yet: settle on the default span for this zoom level around Sa..Sa'
+    const mid = (view.lo + view.hi) / 2, span = 1100 / z;
+    view.lo += (mid - span / 2 - view.lo) * 0.05; view.hi += (mid + span / 2 - view.hi) * 0.05;
   }
 
   g.fillStyle = '#f6eedb'; g.fillRect(0, 0, cw, chh);
@@ -208,6 +224,15 @@ function draw() {
       g.beginPath(); g.moveTo(LABEL_W, y); g.lineTo(cw, y); g.stroke();
       g.fillStyle = isS ? '#8b5a1a' : inRaga ? '#2a1f17' : '#a08f74';
       g.fillText(swaraLabel(sw, oct), 6, y);
+      if (inRaga && (view.hi - view.lo) < 700) {
+        // zoomed in enough to read cents: faint guides at ±15¢ (in tune) and ±35¢ (close)
+        g.setLineDash([2, 6]); g.lineWidth = 1;
+        for (const d of [15, 35]) {
+          g.strokeStyle = d === 15 ? 'rgba(62,122,79,0.35)' : 'rgba(176,122,31,0.3)';
+          for (const sgn of [-1, 1]) { const yy = yOf(c + sgn * d); g.beginPath(); g.moveTo(LABEL_W, yy); g.lineTo(cw, yy); g.stroke(); }
+        }
+        g.setLineDash([]);
+      }
     }
   }
   g.setLineDash([]);
@@ -248,6 +273,11 @@ function draw() {
     g.fillStyle = o.offsetMs == null ? 'rgba(42,31,23,0.35)' : Math.abs(o.offsetMs) <= 60 ? '#3e7a4f' : Math.abs(o.offsetMs) <= 120 ? '#b07a1f' : 'rgba(165,48,31,0.8)';
     g.beginPath(); g.moveTo(x, chh); g.lineTo(x - 4, chh - 7); g.lineTo(x + 4, chh - 7); g.fill();
   }
+
+  // scale legend
+  g.fillStyle = 'rgba(42,31,23,0.55)'; g.font = 'italic 11px "Crimson Pro", Georgia, serif'; g.textBaseline = 'alphabetic';
+  g.fillText(`${Math.round(WINDOW_SEC)} s · ${Math.round(view.hi - view.lo)}¢ tall`, LABEL_W + 6, chh - 12);
+  g.textBaseline = 'middle';
 
   // current pitch marker
   if (current && now - current.t < 0.3) {
@@ -371,7 +401,9 @@ function refreshSa() {
 function refreshRaga() {
   const r = raga();
   ragaSet = r.id === 'chromatic' ? null : ragaSwaraSet(r);
-  $('ragaInfo').textContent = `↑ ${r.aroha}    ↓ ${r.avaroha}${r.time ? '    (' + r.time + ')' : ''}`;
+  ragaCtx = ragaSet ? { name: r.name, raga: r, set: ragaSet, ...ragaDirectionSets(r) } : null;
+  $('ragaInfo').textContent = `↑ ${r.aroha}    ↓ ${r.avaroha}${r.time ? '    (' + r.time + ')' : ''}`
+    + (r.vadi ? `\nvadi ${SWARA_NAMES[r.vadi]} · samvadi ${SWARA_NAMES[r.samvadi]} · pakad: ${r.pakad}` : '');
   const pats = buildPatterns(r);
   fillSelect($('patternSel'), pats.map((p) => ({ value: p.id, label: p.name })), settings.pattern);
   if (!pats.find((p) => p.id === settings.pattern)) { settings.pattern = pats[0].id; $('patternSel').value = settings.pattern; }
@@ -473,7 +505,7 @@ function stopTestTone() {
 
 function showReport() {
   const box = $('reportBox'); box.innerHTML = '';
-  for (const l of guru.report(ragaSet ? raga().name : '')) { const li = document.createElement('li'); li.className = l.cls; li.textContent = l.text; box.appendChild(li); }
+  for (const l of guru.report(ragaCtx)) { const li = document.createElement('li'); li.className = l.cls; li.textContent = l.text; box.appendChild(li); }
 }
 
 function init() {
@@ -517,12 +549,35 @@ function init() {
   $('btnReport').onclick = showReport;
   $('btnResetReport').onclick = () => { guru.reset(); $('reportBox').innerHTML = ''; };
 
+  // zoom: buttons, ⌘/Ctrl+wheel or trackpad pinch over the trace, keyboard + / - / 0
+  setZoom(settings.zoom);
+  $('zoomIn').onclick = () => setZoom(zoom() * 1.25);
+  $('zoomOut').onclick = () => setZoom(zoom() / 1.25);
+  $('zoomReset').onclick = () => setZoom(1);
+  cv.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    setZoom(zoom() * Math.exp(-e.deltaY * 0.01));
+  }, { passive: false });
+  let pinch = null;
+  cv.addEventListener('touchstart', (e) => { if (e.touches.length === 2) pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z: zoom() }; }, { passive: true });
+  cv.addEventListener('touchmove', (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    setZoom(pinch.z * (d / pinch.d));
+  }, { passive: false });
+  cv.addEventListener('touchend', () => { pinch = null; });
+
   window.addEventListener('keydown', (e) => {
     if (e.target.matches('input, select, textarea')) return;
     if (e.code === 'Space') { e.preventDefault(); tap(); }
     else if (e.key === 't' || e.key === 'T') toggleTabla();
     else if (e.key === 'd' || e.key === 'D') toggleTanpura();
     else if (e.key === 'm' || e.key === 'M') toggleMic();
+    else if (e.key === '+' || e.key === '=') setZoom(zoom() * 1.25);
+    else if (e.key === '-' || e.key === '_') setZoom(zoom() / 1.25);
+    else if (e.key === '0') setZoom(1);
   });
 
   requestAnimationFrame(loop);

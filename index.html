@@ -25,7 +25,15 @@
       <div class="cents-row"><b id="centsText">0 ¢</b><span id="hzText"></span><span id="westernText"></span></div>
       <div class="hint" id="liveHint"></div>
     </div>
-    <canvas id="pitchCanvas"></canvas>
+    <div class="trace">
+      <canvas id="pitchCanvas"></canvas>
+      <div class="zoom">
+        <button id="zoomOut" class="small" title="Zoom out (⌘/Ctrl + scroll, or pinch)">−</button>
+        <span id="zoomText">1×</span>
+        <button id="zoomIn" class="small" title="Zoom in (⌘/Ctrl + scroll, or pinch)">+</button>
+        <button id="zoomReset" class="small" title="Reset zoom">⟲</button>
+      </div>
+    </div>
     <div class="taal" id="taalStrip"></div>
     <div class="taal-fb" id="taalFb">Tabla off. Press <kbd>Space</kbd> to tap along once it is running.</div>
   </section>

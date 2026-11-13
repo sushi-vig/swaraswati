@@ -37,6 +37,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
   box-shadow: inset 0 0 0 3px var(--paper2), inset 0 0 0 4px var(--rule); }
 
 .stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.trace { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.zoom { position: absolute; right: 10px; top: 8px; display: flex; gap: 4px; align-items: center;
+  background: rgba(250,245,233,0.85); border: 1px solid var(--rule2); border-radius: 3px; padding: 2px 4px; }
+.zoom button.small { padding: 1px 8px; font-size: 14px; line-height: 18px; font-family: var(--serif); letter-spacing: 0; text-transform: none; }
+.zoom span { font-size: 12px; color: var(--muted); min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
 .now { display: grid; grid-template-columns: 170px 1fr; gap: 2px 22px; align-items: center; padding: 16px 20px; }
 .swara-big { font-family: var(--display); font-size: 68px; font-weight: 600; line-height: 1; grid-row: 1 / 4; display: flex; align-items: baseline; gap: 10px; color: var(--ink); }
 .swara-big small { font-family: var(--serif); font-size: 13px; font-weight: 400; color: var(--muted); font-style: italic; letter-spacing: .5px; }
@@ -86,8 +91,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 .dn.cur { border-color: var(--maroon); color: var(--maroon); }
 .dn.good { background: #dcead9; } .dn.warn { background: #f1e3c0; } .dn.bad { background: #f0d3cc; }
 
-.report { list-style: none; margin: 6px 0 0; padding: 0; font-size: 14.5px; }
-.report li { padding: 5px 0; border-bottom: 1px dotted var(--rule2); }
+.report { list-style: none; margin: 6px 0 0; padding: 0; font-size: 15px; line-height: 1.45; }
+.report li { padding: 7px 0; border-bottom: 1px dotted var(--rule2); }
+.report li:first-child { font-style: italic; }
 .report li.good { color: var(--good); } .report li.warn { color: var(--warn); } .report li.bad { color: var(--bad); }
 .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
 kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 3px; padding: 0 5px; font-size: 12px; font-family: var(--serif); }
@@ -98,3 +104,4 @@ kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 
   .now { grid-template-columns: 1fr; }
   .swara-big { grid-row: auto; justify-content: center; }
 }
+#ragaInfo { white-space: pre-line; display: block; }

@@ -44,8 +44,20 @@ CC0 requires no attribution; the credit here is a courtesy and a provenance reco
 
 (Sonic Pi's README lists the same Freesound ID for `tas1` and `re`; the Freesound pack page shows `re.wav` as 130427 and `tas.wav` as 130426.)
 
+## Tanpura strings (`samples/tanpura/`)
+
+Source: Freesound user luckylittleraven's pack "Tanpura C Sharp", four single-string plucks (G#, A#, C#, low C#)
+from a Swar Sangam, each dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+The files are downloaded by hand from Freesound (a login is required) and placed in the folder; see `samples/tanpura/README.md`.
+
+| File (Freesound name or short name) | Freesound source | Licence |
+| --- | --- | --- |
+| `416605__luckylittleraven__tanpura-note-c-sharp.wav` / `sa.wav` | https://freesound.org/people/luckylittleraven/sounds/416605/ | CC0 1.0 |
+| `416598__luckylittleraven__tanpura-note-g-sharp.wav` / `pa.wav` | https://freesound.org/people/luckylittleraven/sounds/416598/ | CC0 1.0 |
+| `416606__luckylittleraven__tanpura-note-a-sharp.wav` / `dha.wav` | https://freesound.org/people/luckylittleraven/sounds/416606/ | CC0 1.0 |
+| `416597__luckylittleraven__tanpura-note-low-c-sharp.wav` / `kharaj.wav` | https://freesound.org/people/luckylittleraven/sounds/416597/ | CC0 1.0 |
+
 ## Not included
 
 - Freesound user ajaysm's "Tabla Strokes" pack (tin, kat and others) is CC BY 4.0. If any of those files are
   added later, add a visible credit line in the app and in this file.
-- Freesound user luckylittleraven's "Tanpura C Sharp" pack is CC0 and may be added under `samples/tanpura/`.

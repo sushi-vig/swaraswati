@@ -1,5 +1,7 @@
-// Synthesised 4-string tanpura: (Pa|Ma|Ni|…) Sa Sa Sa(kharaj), with a swelling jawari buzz.
-// Two voicings (male/female bodies) plus a low register; per-instance fine tune, pluck speed, pan and jawari.
+// 4-string tanpura: (Pa|Ma|Ni|…) Sa Sa Sa(kharaj).
+// Synthesised voicings (male/female bodies, low register) with a swelling jawari buzz, or recorded strings
+// from samples/tanpura/ (see tanpura-kit.js) pitch-shifted to Sa. Per-instance fine tune, pluck speed, pan, jawari.
+import { tanpuraKit } from './tanpura-kit.js';
 
 // First-string choices, as ratios to Sa (string sits below the middle Sa).
 export const FIRST_STRING = {
@@ -10,6 +12,9 @@ export const VOICES = {
   female: { label: 'Female', rolloff: 0.8, body: 420, bodyGain: 3, jawari: 16, decay: 4.2, octave: 0 },
   male: { label: 'Male', rolloff: 0.62, body: 230, bodyGain: 4.5, jawari: 12, decay: 5.4, octave: 0 },
   low: { label: 'Male, octave below', rolloff: 0.6, body: 160, bodyGain: 5, jawari: 10, decay: 6.0, octave: -1 },
+  // Recorded strings. The synth fields are the fallback used until the files load (or if they are missing).
+  sampled: { label: 'Recorded strings', rolloff: 0.62, body: 230, bodyGain: 0, jawari: 12, decay: 5.4, octave: 0, sampled: true },
+  sampledLow: { label: 'Recorded, octave below', rolloff: 0.6, body: 160, bodyGain: 0, jawari: 10, decay: 6.0, octave: -1, sampled: true },
 };
 
 export class Tanpura {
@@ -22,8 +27,10 @@ export class Tanpura {
     this.out.connect(dest);
     this.waves = {};
     this.sa = 220; this.fifth = 'P'; this.running = false; this.tempo = 1.0; this.fine = 0; this.jawariAmt = 0.6;
+    this.kit = tanpuraKit(ctx); this.onKit = null; this.sampledPlucks = 0;
     this.setVoice('female');
   }
+  get usingSamples() { return !!(this.voice.sampled && this.kit.ready); }
   _wave(rolloff) {
     const key = String(rolloff);
     if (this.waves[key]) return this.waves[key];
@@ -36,6 +43,8 @@ export class Tanpura {
     this.wave = this._wave(this.voice.rolloff);
     this.body.frequency.setTargetAtTime(this.voice.body, this.ctx.currentTime, 0.1);
     this.body.gain.setTargetAtTime(this.voice.bodyGain, this.ctx.currentTime, 0.1);
+    if (this.voice.sampled && !this.kit.promise) this.kit.load().then((ok) => { if (this.onKit) this.onKit(ok, this.kit); });
+    else if (this.voice.sampled && this.onKit) this.kit.promise.then((ok) => this.onKit(ok, this.kit));
   }
   // opts: { fifth, fine (cents), tempo, pan (-1..1), jawari (0..1), voice }
   configure(saHz, fifth, opts = {}) {
@@ -68,6 +77,7 @@ export class Tanpura {
   }
   _pluck(f, t, amp) {
     const ctx = this.ctx, v = this.voice;
+    if (v.sampled && this.kit.ready && this.kit.play(f, t, this.body, { amp: amp * 0.9, tone: this.jawariAmt, decay: v.decay + 1.5 })) { this.sampledPlucks++; return; }
     const o = ctx.createOscillator(); o.setPeriodicWave(this.wave); o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 3;
     // Jawari: brightness swells after the pluck, then settles. jawariAmt scales how far it opens.
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.0 + this.jawariAmt * 0.6;

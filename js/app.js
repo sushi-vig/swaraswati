@@ -36,6 +36,8 @@ function audio() {
     master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
     tanpuras = [new Tanpura(ctx, master), new Tanpura(ctx, master)];
     tanpura = tanpuras[0];
+    const onTpKit = (ok, kit) => { $('tpKitInfo').textContent = ok ? `Recorded strings: ${kit.strings.map((s) => s.role).join(', ')} loaded (${kit.strings.length}/4).` : 'Recorded strings not found in samples/tanpura/; the recorded voices use the synth until the WAVs are added.'; };
+    tanpuras.forEach((t) => { t.onKit = onTpKit; });
     swarmandal = new Swarmandal(ctx, master);
     tabla = new Tabla(ctx, master);
     tabla.onKit = (ok, why) => { $('kitInfo').textContent = ok ? '26 strokes loaded' : `recordings unavailable (${why}); using the synth`; if (!ok) { $('tablaEngine').value = 'synth'; } };
@@ -822,4 +824,4 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10 })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

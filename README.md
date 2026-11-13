@@ -55,6 +55,10 @@ tanpura and tabla are not picked up as "your voice".
 - **Recorded tabla**: 26 real stroke recordings (CC0, from the Sonic Pi sample set, originally Freesound user mmiron)
   in `samples/tabla/`, pitch-shifted as one drum to your Sa, with round-robin takes and short takes for fast bols.
   Switch to the synthesised drum under Tabla → Sound. Provenance and licences are in `samples/LICENSES.md`.
+- **Recorded tanpura**: the voices "Recorded strings" and "Recorded, octave below" play CC0 single-string recordings
+  (Freesound user luckylittleraven's C# pack) from `samples/tanpura/`. The files are fetched by hand from Freesound;
+  `samples/tanpura/README.md` lists them. The app measures each file's pitch and shifts the nearest string to each note,
+  so Sa, Pa, Dha and the kharaj need little shifting and any other first string is bent from the nearest one.
 
 ## Architecture
 
@@ -65,7 +69,8 @@ tanpura and tabla are not picked up as "your voice".
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |
 | `js/music.js` | Swara tables (just intonation and equal temperament), token grammar, nearest-swara lookup. |
 | `js/ragas.js` / `js/taals.js` | Raga and theka data. Add your own here. |
-| `js/tanpura.js` | 4-string tanpura with jawari swell, two voicings, pan and fine tune. |
+| `js/tanpura.js` | 4-string tanpura: synthesised voicings with jawari swell, or recorded strings; pan and fine tune. |
+| `js/tanpura-kit.js` | Loads `samples/tanpura/*.wav`, measures each string's pitch, plays the nearest one shifted to the target. |
 | `js/swarmandal.js` | Raga-tuned swarmandal strum. |
 | `js/tabla.js` | Theka scheduler (layakari, ramp), synthesised dayan/bayan fallback, matra lookup for timing feedback. |
 | `js/samples.js` | Sampled tabla kit: loads `samples/tabla/*.flac`, maps bols to takes, pitch-shifts to Sa. |
@@ -88,6 +93,6 @@ Example: `.N R G M D N S'`.
 
 ## Ideas for later
 
-- Sampled tanpura (a CC0 single-string set exists on Freesound) and lehra.
+- Lehra (a looping melody over the theka for taal practice).
 - Replay a recording with its pitch trace.
 - Per-raga pakad / chalan drills and meend detection.

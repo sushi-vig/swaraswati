@@ -56,8 +56,8 @@ tanpura and tabla are not picked up as "your voice".
   in `samples/tabla/`, pitch-shifted as one drum to your Sa, with round-robin takes and short takes for fast bols.
   Switch to the synthesised drum under Tabla → Sound. Provenance and licences are in `samples/LICENSES.md`.
 - **Recorded tanpura**: the voices "Recorded strings" and "Recorded, octave below" play CC0 single-string recordings
-  (Freesound user luckylittleraven's C# pack) from `samples/tanpura/`. The files are fetched by hand from Freesound;
-  `samples/tanpura/README.md` lists them. The app measures each file's pitch and shifts the nearest string to each note,
+  (Freesound user luckylittleraven's C# pack, Sa at C#3) from `samples/tanpura/`. The app measures each file's pitch,
+  normalises its level and shifts the nearest string to each note,
   so Sa, Pa, Dha and the kharaj need little shifting and any other first string is bent from the nearest one.
 
 ## Architecture

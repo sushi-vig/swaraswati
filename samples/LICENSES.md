@@ -48,7 +48,7 @@ CC0 requires no attribution; the credit here is a courtesy and a provenance reco
 
 Source: Freesound user luckylittleraven's pack "Tanpura C Sharp", four single-string plucks (G#, A#, C#, low C#)
 from a Swar Sangam, each dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
-The files are downloaded by hand from Freesound (a login is required) and placed in the folder; see `samples/tanpura/README.md`.
+Downloaded by hand from Freesound on 2026-11-13; details in `samples/tanpura/README.md`.
 
 | File (Freesound name or short name) | Freesound source | Licence |
 | --- | --- | --- |

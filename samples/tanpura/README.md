@@ -1,8 +1,10 @@
 # Recorded tanpura strings
 
-Drop the four CC0 single-string recordings from Freesound user luckylittleraven's
-"Tanpura C Sharp" pack into this folder. Keep the names Freesound gives them, or rename them
-to the short names; either is found.
+The four CC0 single-string recordings from Freesound user luckylittleraven's "Tanpura C Sharp"
+pack live here under the names Freesound gives them (the short names are also found). Measured:
+Sa at C#3 (138 Hz), Pa G#2, Dha A#2, kharaj C#2, each within 4 cents of its note; 44.1 kHz 16-bit
+stereo, 5 to 8 s long. The loader normalises their quiet level (about -24 dBFS peak) and trims the
+~0.1 s of silence before each pluck.
 
 | String | Freesound page | Downloaded name (or short name) |
 | --- | --- | --- |

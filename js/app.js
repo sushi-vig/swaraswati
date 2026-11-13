@@ -1,6 +1,6 @@
 import { SWARA_ORDER, SWARA_NAMES, SWARA_LONG, OCT_NAMES, CENTS_JI, CENTS_ET, NOTE_NAMES, midiToHz, hzToMidi, noteName, nearestSwara, swaraLabel } from './music.js';
 import { RAGAS, ragaSwaraSet, ragaDirectionSets } from './ragas.js';
-import { TAALS, matraMeta } from './taals.js';
+import { TAALS, matraMeta, thekaOf, bolLabel } from './taals.js';
 import { Tanpura } from './tanpura.js';
 import { Tabla } from './tabla.js';
 import { PitchTracker } from './pitch.js';
@@ -9,7 +9,7 @@ import { Drill, buildPatterns } from './drill.js';
 
 const $ = (id) => document.getElementById(id);
 const LS = 'swaraswati-settings-v1';
-const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1 };
+const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
@@ -31,7 +31,7 @@ function audio() {
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
 }
-const saHz = () => midiToHz(settings.saMidi);
+const saHz = () => midiToHz(settings.saMidi + (settings.saCents || 0) / 100);
 const cmap = () => (settings.tuning === 'et' ? CENTS_ET : CENTS_JI);
 const raga = () => RAGAS.find((r) => r.id === settings.raga) || RAGAS[0];
 const taal = () => TAALS.find((t) => t.id === settings.taal) || TAALS[0];
@@ -43,8 +43,11 @@ function applyAudioSettings() {
   tanpura.configure(saHz(), droneString());
   tanpura.setVolume(settings.tanpuraVol);
   tabla.setSa(saHz());
-  tabla.setTaal(taal());
+  tabla.setTaal(taal(), settings.theka);
   tabla.bpm = settings.bpm;
+  tabla.layakari = settings.layakari;
+  tabla.ramp = { step: settings.rampStep, max: settings.rampMax };
+  tabla.onTempo = (b) => { settings.bpm = b; $('bpm').value = b; $('bpmNum').value = b; save(); setLayaWord(); setStatus(); };
   tabla.setVolume(settings.tablaVol);
 }
 
@@ -86,7 +89,7 @@ function setStatus(extra) {
   const parts = [];
   if (ctx) parts.push(`${(ctx.sampleRate / 1000).toFixed(1)} kHz`);
   parts.push(micOn ? 'mic on' : testTone ? 'test tone' : 'mic off');
-  if (tabla && tabla.running) parts.push(`${taal().name.split(' ')[0]} @ ${settings.bpm}`);
+  if (tabla && tabla.running) parts.push(`${taal().name.split(' ')[0]} @ ${settings.bpm}${settings.layakari > 1 ? ' ×' + settings.layakari : ''}`);
   $('status').textContent = extra ? extra : parts.join(' · ');
 }
 
@@ -315,16 +318,34 @@ function updateNow() {
 
 function buildTaalStrip() {
   const t = taal(), meta = matraMeta(t), strip = $('taalStrip');
+  if (settings.theka >= t.thekas.length) settings.theka = 0;
+  const th = thekaOf(t, settings.theka);
+  fillSelect($('thekaSel'), t.thekas.map((x, i) => ({ value: i, label: x.name })), settings.theka);
+  $('taalNote').textContent = `${t.vibhags.join(' + ')} · ${t.note || ''}`;
   strip.innerHTML = '';
   let group = null;
-  t.bols.forEach((bol, i) => {
+  th.bols.forEach((bol, i) => {
     if (meta[i].startsVibhag) { group = document.createElement('div'); group.className = 'vibhag'; strip.appendChild(group); }
     const m = document.createElement('div');
     m.className = 'matra' + (i === 0 ? ' sam' : ''); m.dataset.i = i;
-    m.innerHTML = `<span class="mark">${meta[i].mark}</span>${bol}<span class="num">${i + 1}</span>`;
+    m.innerHTML = `<span class="mark">${meta[i].mark}</span>${bolLabel(bol)}<span class="num">${i + 1}</span>`;
     group.appendChild(m);
   });
   lastMatraIdx = -1;
+}
+const layaWord = (b) => (b < 40 ? 'ati vilambit' : b < 80 ? 'vilambit' : b < 160 ? 'madhya' : b < 300 ? 'drut' : 'ati drut');
+function setLayaWord() { $('layaWord').textContent = `bpm · ${layaWord(settings.bpm)}`; }
+let taps = [];
+function tapTempo() {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > 2500) taps = [];
+  taps.push(now); if (taps.length > 8) taps.shift();
+  if (taps.length >= 2) {
+    const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    onBpm(Math.round(60000 / iv));
+    $('btnTapTempo').textContent = taps.length < 4 ? `Tap… (${taps.length})` : `Tap tempo · ${settings.bpm}`;
+    clearTimeout(tapTempo.t); tapTempo.t = setTimeout(() => { $('btnTapTempo').textContent = 'Tap tempo'; taps = []; }, 2500);
+  } else $('btnTapTempo').textContent = 'Tap… (1)';
 }
 
 function updateTaal() {
@@ -390,9 +411,13 @@ function fillSelect(sel, items, value) {
   sel.value = value;
 }
 
+function onBpm(v) { settings.bpm = Math.max(20, Math.min(400, Number(v) || 80)); $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; save(); applyAudioSettings(); setLayaWord(); setStatus(); }
+
 function refreshSa() {
   const hz = saHz();
-  $('saInfo').textContent = `Sa = ${noteName(settings.saMidi)} ≈ ${hz.toFixed(1)} Hz · Pa ≈ ${(hz * 1.5).toFixed(1)} Hz · taar Sa ≈ ${(hz * 2).toFixed(1)} Hz`;
+  const fine = settings.saCents ? ` ${settings.saCents > 0 ? '+' : ''}${settings.saCents}¢` : '';
+  $('saInfo').textContent = `Sa = ${noteName(settings.saMidi)}${fine} ≈ ${hz.toFixed(1)} Hz · Pa ≈ ${(hz * 1.5).toFixed(1)} Hz · taar Sa ≈ ${(hz * 2).toFixed(1)} Hz`;
+  $('saFine').value = settings.saCents; $('saFineText').textContent = `${settings.saCents > 0 ? '+' : ''}${settings.saCents} ¢`;
   $('saNote').value = ((settings.saMidi % 12) + 12) % 12;
   $('saOct').value = Math.floor(settings.saMidi / 12) - 1;
   applyAudioSettings();
@@ -519,7 +544,8 @@ function init() {
   $('showAll').checked = settings.showAll;
   $('tanpuraVol').value = settings.tanpuraVol;
   $('tablaVol').value = settings.tablaVol;
-  $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm;
+  $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
+  $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
   $('latency').value = settings.latencyMs; $('latencyText').textContent = `${settings.latencyMs} ms`;
   $('perNoteSel').value = settings.perNote;
   refreshSa(); refreshRaga(); buildTaalStrip();
@@ -538,8 +564,13 @@ function init() {
   $('tanpuraVol').oninput = (e) => { settings.tanpuraVol = Number(e.target.value); save(); if (tanpura) tanpura.setVolume(settings.tanpuraVol); };
   $('btnTabla').onclick = toggleTabla;
   $('taalSel').onchange = (e) => { settings.taal = e.target.value; save(); buildTaalStrip(); applyAudioSettings(); if (drill.active) stopDrill(); };
-  const onBpm = (v) => { settings.bpm = Math.max(30, Math.min(300, Number(v) || 80)); $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; save(); applyAudioSettings(); setStatus(); };
   $('bpm').oninput = (e) => onBpm(e.target.value); $('bpmNum').onchange = (e) => onBpm(e.target.value);
+  $('btnTapTempo').onclick = tapTempo;
+  $('thekaSel').onchange = (e) => { settings.theka = Number(e.target.value); save(); buildTaalStrip(); applyAudioSettings(); };
+  $('layakariSel').onchange = (e) => { settings.layakari = Number(e.target.value); save(); applyAudioSettings(); setStatus(); };
+  $('rampStep').onchange = (e) => { settings.rampStep = Number(e.target.value); save(); applyAudioSettings(); };
+  $('rampMax').onchange = (e) => { settings.rampMax = Math.max(20, Math.min(400, Number(e.target.value) || 160)); $('rampMax').value = settings.rampMax; save(); applyAudioSettings(); };
+  $('saFine').oninput = (e) => { settings.saCents = Number(e.target.value); save(); refreshSa(); };
   $('tablaVol').oninput = (e) => { settings.tablaVol = Number(e.target.value); save(); if (tabla) tabla.setVolume(settings.tablaVol); };
   $('latency').oninput = (e) => { settings.latencyMs = Number(e.target.value); $('latencyText').textContent = `${settings.latencyMs} ms`; save(); };
   $('btnTap').onclick = tap;

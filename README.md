@@ -65,4 +65,7 @@ Example: `.N R G M D N S'`.
 - Sample-based tabla (record a real set) and lehra.
 - Record and replay a session with the pitch trace.
 - Per-raga pakad / chalan drills and meend detection.
-- Export the guru report to share with your teacher.
+- Export the guru report to share with your teacher.- **Taal library**: 22 taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra can be subdivided (`- Dhin`, `Dha Ge`, `Tirkit`). Pick the theka under the taal.
+- **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
+- **Fine-tune Sa** in cents; the tanpura and tabla follow.
+

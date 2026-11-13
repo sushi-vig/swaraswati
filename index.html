@@ -47,6 +47,11 @@
         <select id="saOct"></select>
         <button id="btnDetectSa" class="small" title="Sing and hold your Sa for 3 seconds">Detect</button>
       </div>
+      <div class="row tight">
+        <label>Fine tune</label>
+        <input type="range" id="saFine" min="-50" max="50" step="1" class="grow" title="Shift Sa by cents">
+        <span class="info mono" id="saFineText">0 ¢</span>
+      </div>
       <div class="row tight info"><span id="saInfo"></span></div>
       <div class="row">
         <label>Raga</label>
@@ -93,10 +98,36 @@
         <select id="taalSel"></select>
       </div>
       <div class="row">
+        <label>Theka</label>
+        <select id="thekaSel"></select>
+      </div>
+      <div class="row tight info" id="taalNote"></div>
+      <div class="row">
         <label>Laya</label>
-        <input type="range" id="bpm" min="30" max="300" step="1" class="grow">
-        <input type="number" id="bpmNum" min="30" max="300" step="1" style="width:64px">
-        <span class="info">bpm</span>
+        <input type="range" id="bpm" min="20" max="400" step="1" class="grow">
+        <input type="number" id="bpmNum" min="20" max="400" step="1" style="width:64px">
+        <span class="info" id="layaWord">bpm</span>
+        <button id="btnTapTempo" class="small" title="Tap four or more times to set the tempo">Tap tempo</button>
+      </div>
+      <div class="row">
+        <label>Layakari</label>
+        <select id="layakariSel">
+          <option value="1">Ekgun (theka as written)</option>
+          <option value="2">Dugun (theka at double density)</option>
+          <option value="4">Chaugun (quadruple density)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Ramp</label>
+        <select id="rampStep">
+          <option value="0">off</option>
+          <option value="1">+1 bpm per avartan</option>
+          <option value="2">+2 bpm per avartan</option>
+          <option value="4">+4 bpm per avartan</option>
+          <option value="8">+8 bpm per avartan</option>
+        </select>
+        <span class="info">up to</span>
+        <input type="number" id="rampMax" min="20" max="400" step="1" style="width:64px">
       </div>
       <div class="row"><label>Volume</label><input type="range" id="tablaVol" min="0" max="1" step="0.01" class="grow"></div>
       <div class="row">

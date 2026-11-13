@@ -60,7 +60,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 
 .taal { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
 .vibhag { display: flex; gap: 2px; padding: 7px; }
-.matra { min-width: 54px; text-align: center; padding: 4px 4px 3px; border-radius: 2px; font-family: var(--display); font-size: 15px; font-weight: 600; line-height: 1.2; }
+.matra { min-width: 48px; text-align: center; padding: 4px 4px 3px; border-radius: 2px; font-family: var(--display); font-size: 15px; font-weight: 600; line-height: 1.2; }
 .matra .mark { display: block; color: var(--maroon); font-family: var(--serif); font-size: 10px; font-weight: 700; height: 12px; letter-spacing: 1px; }
 .matra .num { display: block; color: var(--muted); font-family: var(--serif); font-size: 10px; margin-top: 2px; font-weight: 400; }
 .matra.on { background: var(--maroon); color: var(--paper2); }
@@ -105,3 +105,5 @@ kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 
   .swara-big { grid-row: auto; justify-content: center; }
 }
 #ragaInfo { white-space: pre-line; display: block; }
+#taalNote { display: block; font-style: italic; }
+#layaWord { min-width: 88px; }

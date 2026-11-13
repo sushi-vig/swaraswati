@@ -1,7 +1,7 @@
 # Swaraswati
 
 A browser-based practice companion for Hindustani classical vocal riyaz: a shruti (pitch) monitor,
-a synthesised tanpura, a synthesised tabla with the common taals, sargam drills, and a "guru" panel
+a synthesised tanpura, a synthesised tabla with 22 taals and theka variations, sargam drills, and a "guru" panel
 that tells you which swaras drift, by how much, and when you stray outside the raga.
 
 No build step, no dependencies. Everything is vanilla JS + Web Audio + Canvas.
@@ -31,6 +31,18 @@ tanpura and tabla are not picked up as "your voice".
    It begins on the next sam, shows the target swara each matra, and scores every note.
 6. **Guru report.** Press *Show* for a session summary: % in tune, which swaras tend sharp or flat,
    wobble, and any out-of-raga swaras with the swara you probably meant.
+
+## Features in detail
+
+- **Zoom the swara trace** with the − / + buttons on the chart, ⌘/Ctrl + scroll, a trackpad pinch, or the `+` `-` `0` keys.
+  Zoomed in, faint guides mark ±15¢ (in tune) and ±35¢ (close) around each swara line and the view follows the note you are singing.
+- **Guru report** speaks like a teacher: it knows each raga's vadi, samvadi and pakad, catches swaras that do not belong,
+  swaras used against the aroha/avaroha, notes you never visited, and ends with homework built around the pakad.
+- **Taal library**: 22 taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra
+  can be subdivided (`- Dhin`, `Dha Ge`, `Tirkit`). Pick the theka under the taal.
+- **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays
+  the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
+- **Fine-tune Sa** in cents; the tanpura and tabla follow.
 
 ## Architecture
 
@@ -65,7 +77,4 @@ Example: `.N R G M D N S'`.
 - Sample-based tabla (record a real set) and lehra.
 - Record and replay a session with the pitch trace.
 - Per-raga pakad / chalan drills and meend detection.
-- Export the guru report to share with your teacher.- **Taal library**: 22 taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra can be subdivided (`- Dhin`, `Dha Ge`, `Tirkit`). Pick the theka under the taal.
-- **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
-- **Fine-tune Sa** in cents; the tanpura and tabla follow.
-
+- Export the guru report to share with your teacher.

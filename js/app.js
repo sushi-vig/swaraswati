@@ -15,7 +15,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, gamaka: { hindustani: false, carnatic: true }, echoCancel: true, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, gamaka: { hindustani: false, carnatic: true }, echoCancel: false, aec: true, recSplit: false, micV: 2, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -25,13 +25,15 @@ settings.tanpurasMigrated = true;
 settings.sm = Object.assign({}, defaults.sm, settings.sm || {});
 settings.shruti = Object.assign({}, defaults.shruti, settings.shruti || {});
 settings.gamaka = Object.assign({}, defaults.gamaka, settings.gamaka || {});
+// Mic v2: the app cancels its own sound from the mic; the browser's echo canceller is off by default (it mutes the voice after loud strokes).
+if (settings.micV !== 2) { settings.echoCancel = false; settings.aec = true; settings.micV = 2; }
 // Zoom scale 3 (2026-11): octaves visible = 6 - 2×zoom, default 2× = two octaves around Sa..Sa'. Older saved zooms reset.
 if (settings.zoomScale !== 3) { settings.zoom = 2; settings.zoomScale = 3; }
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
 
 // ---------- audio graph ----------
-let lastKitInfo = '';
+let lastKitInfo = '', aecStats = null;
 let ctx = null, master = null, tanpura = null, tanpuras = [], swarmandal = null, shruti = null, tabla = null, tracker = null, micStream = null, micSource = null, testTone = null;
 const guru = new Guru();
 const drill = new Drill();
@@ -88,6 +90,8 @@ async function ensureTracker() {
     await tracker.init();
     tracker.onFrame = onFrame;
     tracker.setSensitivity(settings.sensitivity);
+    tracker.setReference(master); tracker.setAec(settings.aec);
+    tracker.onStats = (d) => { aecStats = d; };
   }
   return tracker;
 }
@@ -107,7 +111,8 @@ async function toggleMic() {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !!settings.echoCancel, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
     micSource = ctx.createMediaStreamSource(micStream);
     const got = micStream.getAudioTracks()[0].getSettings ? micStream.getAudioTracks()[0].getSettings() : {};
-    $('micInfo').textContent = settings.echoCancel ? (got.echoCancellation === false ? 'browser did not apply it; use headphones' : got.echoCancellation ? 'on' : 'requested') : 'off';
+    $('micInfo').textContent = settings.echoCancel ? (got.echoCancellation === false ? 'browser canceller: not applied' : 'browser canceller: on') : '';
+    if (tracker) tracker.resetAec();
     if (testTone) stopTestTone();
     tracker.setInput(micSource);
     micOn = true;
@@ -355,6 +360,8 @@ function updateMicMeter() {
   lv.style.width = `${live ? pos(fr.rms) : 0}%`; lv.classList.toggle('voiced', live && fr.f0 > 0);
   if (fr.floor != null) $('micFloor').style.left = `${pos(fr.floor * 1.8)}%`;
   $('micText').textContent = live ? `${Math.round(db(fr.rms))} dB${fr.f0 > 0 ? ' · voice' : fr.rms > (fr.floor || 0) * 1.8 ? ' · unclear' : ' · quiet'}` : '—';
+  const st = aecStats, el = $('aecText');
+  if (el) el.textContent = live && st && st.on ? (st.ref > 1e-4 ? `bleed removed: ${Math.max(0, Math.round(st.erle))} dB` : 'bleed removed: (nothing playing)') : live && settings.aec ? 'bleed removed: —' : '';
 }
 function updateNow() {
   updateMicMeter();
@@ -669,28 +676,44 @@ async function toggleTestTone() {
   const lfo = ctx.createOscillator(); lfo.frequency.value = deep ? 5 : 5.5; const lfoG = ctx.createGain(); lfoG.gain.value = deep ? 110 : 5; lfo.connect(lfoG).connect(o.detune);
   const g = ctx.createGain(); g.gain.value = 0.12;
   const monitor = ctx.createGain(); monitor.gain.value = 0.25;
-  o.connect(lp).connect(g); g.connect(monitor).connect(master);
-  tracker.setInput(g);
+  // ?bleed: simulate a speaker-to-mic path. The analyser hears the tone plus the app's output delayed 35 ms,
+  // dulled and at half level, the way a mic near a laptop speaker would; the tone's monitor bypasses the master
+  // so it is not part of the canceller's reference (a real voice is not in the app's output either).
+  const bleed = /[?&]bleed(=([\d.]+))?/.exec(location.search);
+  let mix = g, bleedNodes = null;
+  if (bleed) {
+    const delay = ctx.createDelay(1); delay.delayTime.value = 0.035;
+    const dull = ctx.createBiquadFilter(); dull.type = 'lowpass'; dull.frequency.value = 3200;
+    const amt = ctx.createGain(); amt.gain.value = bleed[2] ? Number(bleed[2]) : 0.5;
+    mix = ctx.createGain(); master.connect(delay).connect(dull).connect(amt).connect(mix); g.connect(mix);
+    bleedNodes = { delay, dull, amt, mix };
+    o.connect(lp).connect(g); g.connect(monitor).connect(ctx.destination);
+  } else { o.connect(lp).connect(g); g.connect(monitor).connect(master); }
+  tracker.setInput(mix);
   o.start(); lfo.start();
   const seq = buildPatterns(raga(), settings.tradition)[0].notes;
   let i = 0;
   const step = () => {
     const n = seq[i % seq.length]; i++;
     const wobble = (Math.random() - 0.5) * 40;              // deliberately imperfect, like a learner
-    const hz = saHz() * Math.pow(2, (cmap()[n.sw] + n.oct * 1200 + wobble) / 1200);
+    const target = cmap()[n.sw] + n.oct * 1200;
+    if (testTone) testTone.curCents = target + wobble; else pendingCur = target + wobble;
+    const hz = saHz() * Math.pow(2, (target + wobble) / 1200);
     const now = ctx.currentTime;
     g.gain.setTargetAtTime(0, now, 0.02);                          // breathe
     o.frequency.setTargetAtTime(hz, now + 0.12, 0.02);
     g.gain.setTargetAtTime(0.12, now + 0.18, 0.02);
   };
+  let pendingCur = 0;
   step();
-  testTone = { o, lfo, g, timer: setInterval(step, 900) };
+  testTone = { o, lfo, g, bleedNodes, curCents: pendingCur, timer: setInterval(step, 900) };
   $('btnTest').textContent = 'Stop tone'; $('btnTest').classList.add('on');
   setStatus();
 }
 function stopTestTone() {
   if (!testTone) return;
   clearInterval(testTone.timer); testTone.o.stop(); testTone.lfo.stop();
+  if (testTone.bleedNodes) { try { master.disconnect(testTone.bleedNodes.delay); } catch { /* not connected */ } }
   tracker.setInput(null); testTone = null;
   $('btnTest').textContent = 'Test tone'; $('btnTest').classList.remove('on');
   setStatus();
@@ -704,7 +727,7 @@ function showReport() {
 
 // ---------- presets ----------
 const PRESETS_KEY = 'swaraswati-presets-v1';
-const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'zoomScale', 'tanpuras', 'sm', 'tradition', 'shruti', 'gamaka', 'echoCancel'];
+const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'zoomScale', 'tanpuras', 'sm', 'tradition', 'shruti', 'gamaka', 'echoCancel', 'aec'];
 let presets = [];
 function loadPresets() { try { presets = JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { presets = []; } if (!Array.isArray(presets)) presets = []; }
 function savePresets() { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* full or private */ } }
@@ -784,8 +807,20 @@ let recDest = null, recMicGain = null, recorder = null, recChunks = [], recStart
 function recGraph() {
   if (recDest) return;
   recDest = ctx.createMediaStreamDestination();
-  master.connect(recDest);
-  recMicGain = ctx.createGain(); recMicGain.gain.value = 1.0; recMicGain.connect(recDest);
+  recMicGain = ctx.createGain(); recMicGain.gain.value = 1.0;
+  if (settings.recSplit) {
+    // diagnostic stereo: instruments on the left channel, the mic alone on the right
+    recMerger = ctx.createChannelMerger(2);
+    master.connect(recMerger, 0, 0); recMicGain.connect(recMerger, 0, 1); recMerger.connect(recDest);
+  } else { master.connect(recDest); recMicGain.connect(recDest); }
+}
+let recMerger = null;
+function rebuildRecGraph() {
+  if (!recDest) return;
+  try { master.disconnect(recDest); } catch { /* not connected */ }
+  if (recMerger) { try { master.disconnect(recMerger); recMerger.disconnect(); } catch { /* not connected */ } recMerger = null; }
+  try { recMicGain.disconnect(); } catch { /* not connected */ }
+  recDest = null; recGraph();
 }
 function connectMicToRec() {
   if (!recorder || !micSource || !recMicGain || !$('recMic').checked) return;
@@ -849,7 +884,7 @@ function syncUI() {
   $('smAuto').value = settings.sm.auto; $('smRange').value = settings.sm.range; $('smDir').value = settings.sm.dir; $('smGap').value = settings.sm.gap; $('smVol').value = settings.sm.vol;
   $('smGapText').textContent = `${settings.sm.gap} ms`;
   $('sens').value = settings.sensitivity; if (tracker) tracker.setSensitivity(settings.sensitivity);
-  $('showAll').checked = settings.showAll; $('gamakaAware').checked = gamakaOn(); $('echoCancel').checked = !!settings.echoCancel;
+  $('showAll').checked = settings.showAll; $('gamakaAware').checked = gamakaOn(); $('echoCancel').checked = !!settings.echoCancel; $('aecOn').checked = !!settings.aec; $('recSplit').checked = !!settings.recSplit;
   $('tablaVol').value = settings.tablaVol;
   $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
   $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
@@ -894,6 +929,8 @@ function init() {
   $('btnShruti').onclick = toggleShruti;
   $('tuningSel').onchange = (e) => { settings.tuning = e.target.value; save(); refreshRaga(); };
   $('echoCancel').onchange = async (e) => { settings.echoCancel = e.target.checked; save(); if (micOn) { await toggleMic(); await toggleMic(); } };
+  $('aecOn').onchange = (e) => { settings.aec = e.target.checked; save(); if (tracker) tracker.setAec(settings.aec); };
+  $('recSplit').onchange = (e) => { settings.recSplit = e.target.checked; save(); if (!recorder) rebuildRecGraph(); };
   $('gamakaAware').onchange = (e) => { settings.gamaka[settings.tradition] = e.target.checked; save(); gamaka.reset(); };
   $('sens').oninput = (e) => { settings.sensitivity = Number(e.target.value); save(); if (tracker) tracker.setSensitivity(settings.sensitivity); };
   $('showAll').onchange = (e) => { settings.showAll = e.target.checked; save(); };
@@ -956,4 +993,5 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiTune = (opts) => { if (tracker) tracker.tuneAec(opts); return opts; };
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, aec: aecStats, aecOn: settings.aec, toneCents: testTone ? Math.round(testTone.curCents) : null, trackerRate: tracker ? tracker.rate : null, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

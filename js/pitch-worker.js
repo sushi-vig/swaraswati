@@ -2,14 +2,14 @@
 // Receives sample chunks (from the worklet directly, or forwarded by the main thread),
 // posts { t, f0, clarity, rms } frames back to the main thread.
 
-let sr = 48000;
-const W = 2048;          // analysis window (~43 ms at 48 kHz)
-const HOP = 1024;        // ~47 frames/s
+let sr = 16000;
+let W = 1024;            // analysis window (64 ms at 16 kHz); the worklet decimates to ~16 kHz before sending
+let HOP = 512;           // ~31 frames/s
 const MIN_HZ = 65, MAX_HZ = 1300;
 const RING = 16384;
 let ring = new Float32Array(RING), wpos = 0, total = 0, sinceLast = 0;
-const x = new Float32Array(W);
-const cum = new Float64Array(W + 1);
+let x = new Float32Array(W);
+let cum = new Float64Array(W + 1);
 let nsdf, maxLag, minLag;
 
 const params = { absRms: 0.006, floorMult: 1.8, clarityOn: 0.80, clarityOff: 0.62, keyThresh: 0.8 };
@@ -19,6 +19,7 @@ let bucketLen = 470, bucketPos = 0, curMin = Infinity, prevMin = Infinity;
 let frameNo = 0, runStart = 0, longRun = 2110; // frames (~45 s): a "note" held longer than this is treated as background
 
 function setup() {
+  x = new Float32Array(W); cum = new Float64Array(W + 1);
   maxLag = Math.min(Math.floor(sr / MIN_HZ), W >> 1);
   bucketLen = Math.round((sr / HOP) * 10);
   longRun = Math.round((sr / HOP) * 45);
@@ -30,7 +31,7 @@ setup();
 self.onmessage = (e) => {
   const d = e.data;
   if (d.type === 'init') {
-    sr = d.sampleRate || sr; setup();
+    sr = d.sampleRate || sr; if (d.window) W = d.window; if (d.hop) HOP = d.hop; setup();
     if (d.port) { d.port.onmessage = (ev) => onSamples(ev.data); }
   } else if (d.type === 'samples') {
     onSamples(d);

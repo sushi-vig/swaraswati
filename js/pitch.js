@@ -14,11 +14,20 @@ export class PitchTracker {
     await this.ctx.audioWorklet.addModule(new URL('./pitch-worklet.js', import.meta.url));
     this.worker = new Worker(new URL('./pitch-worker.js', import.meta.url));
     const ch = new MessageChannel();
-    this.worker.postMessage({ type: 'init', sampleRate: this.ctx.sampleRate, port: ch.port1 }, [ch.port1]);
-    this.node = new AudioWorkletNode(this.ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+    // The worklet decimates to ~16 kHz (by an integer factor) before analysis; tell the worker that rate.
+    const D = Math.max(1, Math.round(this.ctx.sampleRate / 16000));
+    this.rate = this.ctx.sampleRate / D;
+    this.worker.postMessage({ type: 'init', sampleRate: this.rate, window: 1024, hop: 512, port: ch.port1 }, [ch.port1]);
+    // Input 0: the mic (or a test tone). Input 1: the app's own output, the reference the canceller subtracts.
+    this.node = new AudioWorkletNode(this.ctx, 'capture-processor', { numberOfInputs: 2, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
     // Preferred path: worklet -> worker directly. Fallback: worklet -> main -> worker.
     this.node.port.postMessage({ port: ch.port2 }, [ch.port2]);
-    this.node.port.onmessage = (e) => { if (e.data && e.data.type === 'samples') this.worker.postMessage(e.data, [e.data.samples.buffer]); };
+    this.onStats = null; this.stats = null;
+    this.node.port.onmessage = (e) => {
+      const d = e.data; if (!d) return;
+      if (d.type === 'samples') this.worker.postMessage(d, [d.samples.buffer]);
+      else if (d.type === 'aec') { this.stats = d; if (this.onStats) this.onStats(d); }
+    };
     this.worker.onmessage = (e) => { if (this.onFrame) this.onFrame(e.data); };
     // Keep the node alive in the graph without producing sound.
     this.sink = this.ctx.createGain(); this.sink.gain.value = 0;
@@ -35,6 +44,12 @@ export class PitchTracker {
     if (node) node.connect(this.hp);
     this.worker.postMessage({ type: 'reset' });
   }
+
+  // The app's output, so the canceller can subtract what the speakers play from the mic.
+  setReference(node) { if (this.reference) { try { this.reference.disconnect(this.node, 0, 1); } catch (_) { /* not connected */ } } this.reference = node; if (node) node.connect(this.node, 0, 1); }
+  setAec(on) { this.node.port.postMessage({ aec: !!on }); }
+  tuneAec(opts) { this.node.port.postMessage(opts); }
+  resetAec() { this.node.port.postMessage({ reset: true }); }
 
   // sensitivity 0..1 -> absolute RMS gate (higher sensitivity = lower gate).
   setSensitivity(s) {

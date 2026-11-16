@@ -66,9 +66,13 @@ tanpura and tabla are not picked up as "your voice".
   andolan, is judged by the pitch the swing is anchored on, not frame by frame. The display shows the anchored swara
   with a tilde and the swing's width and rate; the guru reports which swaras carried gamaka and whether the anchor sat
   true; the drill scores the anchor. Plain slides and steady notes are untouched.
-- **Mic on speakers**: the browser's echo cancellation is on by default, so the tanpura and drum the page plays are
-  subtracted from the microphone (checkbox under Mic; turn off on headphones for the rawest signal). A level meter shows
-  what the detector receives against the noise floor it must clear. The app knows when every drum stroke fires and how
+- **Mic on speakers**: the app cancels its own sound from the microphone. The capture worklet takes the mic and the
+  app's master output, decimates both to 16 kHz, and an NLMS adaptive filter (128 ms of taps) learns the speaker-to-mic
+  path and subtracts the tanpura, shruti petti, swarmandal and drum before pitch detection. Unlike the browser's echo
+  canceller it never mutes the mic, so a voice sung over a loud stroke survives; the browser canceller is off by default
+  and available as a second checkbox. The Mic panel shows how many dB of bleed are being removed. A level meter shows what
+  the detector receives against the noise floor it must clear. Add `?bleed=0.5` to the address and press Test tone to
+  simulate a speaker-to-mic path for checking. The app knows when every drum stroke fires and how
   long each one rings: a stroke's attack is masked, and while it rings any frame whose pitch matches that drum head is
   masked too (drawn faint, never scored), while the voice on another swara is still heard.
 - **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
@@ -79,7 +83,8 @@ tanpura and tabla are not picked up as "your voice".
 - **Presets**: save the whole setup (Sa, raga, tuning, taal, theka, laya, tanpuras, swarmandal, drill) under a name,
   load it back, export all presets as a JSON file and import them on another device.
 - **Recording** (`R`): records the tanpura, tabla and swarmandal mix plus your voice from the mic into a WebM/Opus file
-  (M4A on Safari) with playback and download. Takes live in memory until downloaded.
+  (M4A on Safari) with playback and download. Takes live in memory until downloaded. A diagnostic stereo option puts the
+  instruments on the left channel and the mic alone on the right, for investigating microphone problems.
 - **Save the guru report** as a text file to send to your teacher.
 - **Recorded tabla**: 26 real stroke recordings (CC0, from the Sonic Pi sample set, originally Freesound user mmiron)
   in `samples/tabla/`, pitch-shifted as one drum to your Sa, with round-robin takes and short takes for fast bols.
@@ -93,8 +98,8 @@ tanpura and tabla are not picked up as "your voice".
 
 | File | Role |
 | --- | --- |
-| `js/pitch-worklet.js` | AudioWorklet that only captures audio and ships 1024-sample chunks. No DSP on the audio thread, so playback never glitches. |
-| `js/pitch-worker.js` | Web Worker running the McLeod Pitch Method (NSDF) with an adaptive noise-floor gate. Window 2048, hop 1024, m(τ) via cumulative sums, no per-frame allocation. |
+| `js/pitch-worklet.js` | AudioWorklet: captures the mic, cancels the app's own output from it (NLMS at 16 kHz) and ships 512-sample chunks. |
+| `js/pitch-worker.js` | Web Worker running the McLeod Pitch Method (NSDF) with an adaptive noise-floor gate. Window 1024, hop 512 at 16 kHz, m(τ) via cumulative sums, no per-frame allocation. |
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |
 | `js/music.js` | Swara tables (just intonation and equal temperament), token grammar, nearest-swara lookup. |
 | `js/ragas.js`, `js/ragas-hindustani.js`, `js/ragas-carnatic.js` | Raga data: Hindustani list, generated melakartas and janyas. Add your own here. |

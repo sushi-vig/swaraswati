@@ -94,7 +94,8 @@
       <h3>Mic</h3>
       <div class="row"><label>Sensitivity</label><input type="range" id="sens" min="0" max="1" step="0.01" class="grow"></div>
       <div class="row tight"><label>Mic level</label><div class="micmeter grow" title="What the detector receives: the bar is your level, the tick is the noise floor it must clear"><div id="micFloor"></div><div id="micLevel"></div></div><span class="info mono" id="micText">—</span></div>
-      <div class="row tight"><label title="Asks the browser to subtract the sound this page plays (tanpura, drum) from the microphone. Turn off on headphones if you want the rawest signal."><input type="checkbox" id="echoCancel"> cancel the speaker sound from the mic</label><span class="info" id="micInfo"></span></div>
+      <div class="row tight"><label title="The app subtracts its own tanpura, shruti petti, swarmandal and drum from the microphone before listening to you. It never mutes the mic."><input type="checkbox" id="aecOn"> cancel the app's own sound from the mic</label><span class="info mono" id="aecText"></span></div>
+      <div class="row tight"><label title="The browser's echo canceller. It can mute your voice for a moment after each loud drum stroke, so it is off by default; try it only on a speaker setup where the in-app canceller is not enough."><input type="checkbox" id="echoCancel"> also use the browser's echo canceller</label><span class="info" id="micInfo"></span></div>
       <div class="row">
         <label><input type="checkbox" id="showAll"> show all 12 swara lines</label>
         <label title="Oscillating notes (kampita, andolan) are judged by the pitch the swing is anchored on, not frame by frame"><input type="checkbox" id="gamakaAware"> gamaka-aware scoring</label>
@@ -245,6 +246,7 @@
     <div class="panel">
       <h3>Recording <button id="btnRec" class="small right" title="Record the session (R)">● Record</button></h3>
       <div class="row tight"><label class="wide"><input type="checkbox" id="recMic" checked> include my voice from the mic</label></div>
+      <div class="row tight"><label class="wide" title="For diagnosing mic problems: instruments on the left channel, the microphone alone on the right"><input type="checkbox" id="recSplit"> diagnostic stereo: instruments left, mic right</label></div>
       <div class="info" id="recInfo">Records the tanpura, tabla and swarmandal mix, plus your voice when the mic is on. Files stay on this device until you download them.</div>
       <ul class="recs" id="recList"></ul>
     </div>

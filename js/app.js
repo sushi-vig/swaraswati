@@ -13,7 +13,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, saCents: 0, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, zoomScale: 2, saCents: 0, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -21,6 +21,8 @@ settings.tanpuras = settings.tanpuras.map((t, i) => Object.assign({}, defaults.t
 if (settings.drone && settings.drone !== 'auto' && !settings.tanpurasMigrated) { settings.tanpuras[0].string = settings.drone; settings.tanpuras[0].vol = settings.tanpuraVol; }
 settings.tanpurasMigrated = true;
 settings.sm = Object.assign({}, defaults.sm, settings.sm || {});
+// Zoom scale 2 (2026-11): 1× shows ~7 octaves and 34 s, steps are ×2. Older saved zooms meant something else, so reset.
+if (settings.zoomScale !== 2) { settings.zoom = 1; settings.zoomScale = 2; }
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
 
@@ -165,15 +167,18 @@ function registerOnset(t) {
 const cv = $('pitchCanvas');
 const g = cv.getContext('2d', { alpha: false });
 let cw = 0, chh = 0, dpr = 1;
-const LABEL_W = 54, BASE_WINDOW_SEC = 12;
-const ZOOM_MIN = 0.5, ZOOM_MAX = 6;
-const view = { lo: -400, hi: 1500 };
-// Zoom: vertical span shrinks with the zoom factor; the time window shrinks more gently.
+const LABEL_W = 54, BASE_WINDOW_SEC = 34;
+// Zoom scale: at 1× the trace spans BASE_SPAN cents (about 7 octaves, so a whole voice sits still on screen) and
+// BASE_WINDOW_SEC seconds; each step doubles. 8× is the old close view (one octave), 64× reads single cents.
+const ZOOM_MIN = 0.5, ZOOM_MAX = 64, BASE_SPAN = 8800, BASE_PAD = 2000, FOLLOW_ABOVE = 12;
+const view = { lo: -3850, hi: 4950 };
+// Vertical span shrinks with the zoom factor; the time window shrinks more gently (with its square root).
 const zoom = () => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, settings.zoom || 1));
-const windowSec = () => Math.min(24, Math.max(4, BASE_WINDOW_SEC / Math.sqrt(zoom())));
+const windowSec = () => Math.min(48, Math.max(4, BASE_WINDOW_SEC / Math.sqrt(zoom())));
 function setZoom(z) {
   settings.zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100; save();
-  $('zoomText').textContent = `${settings.zoom.toFixed(settings.zoom < 1 || settings.zoom % 1 ? 1 : 0)}×`;
+  const t = settings.zoom;
+  $('zoomText').textContent = `${t >= 10 ? Math.round(t) : t % 1 ? t.toFixed(1) : t}×`;
 }
 
 function resize() {
@@ -205,14 +210,14 @@ function draw() {
   }
   if (mn !== Infinity) {
     // Zoomed in: follow the latest pitch tightly; zoomed out: fit every visible point.
-    const pad = 250 / z, minSpan = 1100 / z;
+    const pad = BASE_PAD / z, minSpan = BASE_SPAN / z;
     let lo, hi;
-    if (z > 1.5 && current) { const span = Math.max(minSpan, (mx - mn) / z + pad); lo = current.cents - span / 2; hi = current.cents + span / 2; }
+    if (z > FOLLOW_ABOVE && current) { const span = Math.max(minSpan, (mx - mn) / z + pad); lo = current.cents - span / 2; hi = current.cents + span / 2; }
     else { lo = mn - pad; hi = mx + pad; if (hi - lo < minSpan) { const mid = (lo + hi) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; } }
     view.lo += (lo - view.lo) * 0.05; view.hi += (hi - view.hi) * 0.05;
-  } else if (Math.abs((view.hi - view.lo) - 1100 / z) > 1) {
-    // nothing sung yet: settle on the default span for this zoom level around Sa..Sa'
-    const mid = (view.lo + view.hi) / 2, span = 1100 / z;
+  } else if (Math.abs((view.hi - view.lo) - BASE_SPAN / z) > 1) {
+    // nothing sung yet: settle on the default span for this zoom level around the current centre
+    const mid = (view.lo + view.hi) / 2, span = BASE_SPAN / z;
     view.lo += (mid - span / 2 - view.lo) * 0.05; view.hi += (mid + span / 2 - view.hi) * 0.05;
   }
 
@@ -232,8 +237,11 @@ function draw() {
 
   // swara lines
   const cm = cmap();
+  // When swara lines sit closer than ~11 px, label only Sa and Pa so the names stay readable.
+  const pxPer100 = chh / ((view.hi - view.lo) / 100);
+  const sparseLabels = pxPer100 < 11;
   g.font = '600 13px "Cormorant Garamond", Georgia, serif'; g.textBaseline = 'middle';
-  for (let oct = -2; oct <= 2; oct++) {
+  for (let oct = -4; oct <= 4; oct++) {
     for (const sw of SWARA_ORDER) {
       const c = cm[sw] + oct * 1200;
       if (c < view.lo || c > view.hi) continue;
@@ -245,7 +253,7 @@ function draw() {
       g.lineWidth = isS ? 1.5 : 1;
       g.beginPath(); g.moveTo(LABEL_W, y); g.lineTo(cw, y); g.stroke();
       g.fillStyle = isS ? '#8b5a1a' : inRaga ? '#2a1f17' : '#a08f74';
-      g.fillText(swaraLabel(sw, oct), 6, y);
+      if (!sparseLabels || isS || (sw === 'P' && inRaga)) g.fillText(swaraLabel(sw, oct), 6, y);
       if (inRaga && (view.hi - view.lo) < 700) {
         // zoomed in enough to read cents: faint guides at ±15¢ (in tune) and ±35¢ (close)
         g.setLineDash([2, 6]); g.lineWidth = 1;
@@ -586,7 +594,7 @@ function showReport() {
 
 // ---------- presets ----------
 const PRESETS_KEY = 'swaraswati-presets-v1';
-const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'tanpuras', 'sm'];
+const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'zoomScale', 'tanpuras', 'sm'];
 let presets = [];
 function loadPresets() { try { presets = JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { presets = []; } if (!Array.isArray(presets)) presets = []; }
 function savePresets() { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* full or private */ } }
@@ -601,6 +609,7 @@ function applyPreset(p) {
   const v = p.settings || {};
   for (const k of PRESET_FIELDS) {
     if (!(k in v)) continue;
+    if (k === 'zoom' && v.zoomScale !== 2) continue; // zoom saved on the old scale: keep the current one
     if (k === 'tanpuras' && Array.isArray(v.tanpuras)) v.tanpuras.forEach((t, i) => { if (settings.tanpuras[i]) Object.assign(settings.tanpuras[i], t); });
     else if (k === 'sm') Object.assign(settings.sm, v.sm);
     else settings[k] = v[k];
@@ -788,8 +797,8 @@ function init() {
   $('btnResetReport').onclick = () => { guru.reset(); $('reportBox').innerHTML = ''; };
 
   // zoom: buttons, ⌘/Ctrl+wheel or trackpad pinch over the trace, keyboard + / - / 0
-  $('zoomIn').onclick = () => setZoom(zoom() * 1.25);
-  $('zoomOut').onclick = () => setZoom(zoom() / 1.25);
+  $('zoomIn').onclick = () => setZoom(zoom() * 2);
+  $('zoomOut').onclick = () => setZoom(zoom() / 2);
   $('zoomReset').onclick = () => setZoom(1);
   cv.addEventListener('wheel', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
@@ -814,8 +823,8 @@ function init() {
     else if (e.key === 's' || e.key === 'S') strum();
     else if (e.key === 'r' || e.key === 'R') toggleRecording();
     else if (e.key === 'm' || e.key === 'M') toggleMic();
-    else if (e.key === '+' || e.key === '=') setZoom(zoom() * 1.25);
-    else if (e.key === '-' || e.key === '_') setZoom(zoom() / 1.25);
+    else if (e.key === '+' || e.key === '=') setZoom(zoom() * 2);
+    else if (e.key === '-' || e.key === '_') setZoom(zoom() / 2);
     else if (e.key === '0') setZoom(1);
   });
 

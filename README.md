@@ -36,8 +36,9 @@ tanpura and tabla are not picked up as "your voice".
 
 ## Features in detail
 
-- **Zoom the swara trace** with the − / + buttons on the chart, ⌘/Ctrl + scroll, a trackpad pinch, or the `+` `-` `0` keys.
-  Zoomed in, faint guides mark ±15¢ (in tune) and ±35¢ (close) around each swara line and the view follows the note you are singing.
+- **Zoom the swara trace** with the − / + buttons on the chart (each step doubles), ⌘/Ctrl + scroll, a trackpad pinch, or the
+  `+` `-` `0` keys. At 1× the whole voice sits still on screen (about seven octaves, 34 s); 8× is a one-octave close view;
+  from 16× the view follows the note you are singing and faint guides mark ±15¢ (in tune) and ±35¢ (close) around each swara line.
 - **Guru report** speaks like a teacher: it knows each raga's vadi, samvadi and pakad, catches swaras that do not belong,
   swaras used against the aroha/avaroha, notes you never visited, and ends with homework built around the pakad.
 - **Taal library**: 22 taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra

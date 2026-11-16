@@ -28,15 +28,18 @@ export class Guru {
     const dur = r.tEnd - r.tStart;
     if (dur < 0.25 || r.n < 4) return;
     const mean = r.sum / r.n, sd = Math.sqrt(Math.max(0, r.sq / r.n - mean * mean));
-    const p = this.per[r.sw] || (this.per[r.sw] = { holds: 0, sumDev: 0, sumSd: 0, sumDur: 0, octs: new Set() });
+    const p = this.per[r.sw] || (this.per[r.sw] = { holds: 0, sumDev: 0, sumSd: 0, sumDur: 0, octs: new Set(), gamaka: 0, gamSpan: 0, gamDev: 0 });
     p.holds++; p.sumDev += mean; p.sumSd += sd; p.sumDur += dur; p.octs.add(r.oct);
+    if (r.gam && r.gam >= r.n / 2) { p.gamaka++; p.gamSpan += r.gamSpan / r.gam; p.gamDev += mean; }
     if (!r.inRaga) this.outRaga.push({ sw: r.sw, t: r.tStart, dur, suggest: r.suggest });
     if (this.runs.length < 4000) this.runs.push({ sw: r.sw, oct: r.oct, idx: idxOf(r.sw, r.oct), tStart: r.tStart, tEnd: r.tEnd, dur, inRaga: r.inRaga });
   }
 
   // info: nearest of all 12 swaras; ragaInfo: nearest swara allowed in the raga; rctx: { name, raga, set, up, down } or null.
-  addFrame(t, info, ragaInfo, inRaga, rctx) {
+  // gam: the gamaka tracker's state for this frame ({ anchored, span, rate }) or null when the note is held plain.
+  addFrame(t, info, ragaInfo, inRaga, rctx, gam = null) {
     this.frames++; this.voiced++;
+    if (gam) this.gamFrames = (this.gamFrames || 0) + 1;
     if (this.firstT == null) this.firstT = t; this.lastT = t;
     const dev = info.dev, ad = Math.abs(dev);
     if (ad <= 15) this.inTune++;
@@ -45,9 +48,10 @@ export class Guru {
     if (r && r.sw === info.sw && r.oct === info.oct && t - r.tEnd < 0.15) {
       r.n++; r.sum += dev; r.sq += dev * dev; r.tEnd = t;
       r.recent.push(dev); if (r.recent.length > 24) r.recent.shift();
+      if (gam) { r.gam++; r.gamSpan += gam.span; }
     } else {
       this._finishRun();
-      this.run = { sw: info.sw, oct: info.oct, inRaga, suggest: ragaInfo.sw, tStart: t, tEnd: t, n: 1, sum: dev, sq: dev * dev, recent: [dev] };
+      this.run = { sw: info.sw, oct: info.oct, inRaga, suggest: ragaInfo.sw, tStart: t, tEnd: t, n: 1, sum: dev, sq: dev * dev, recent: [dev], gam: gam ? 1 : 0, gamSpan: gam ? gam.span : 0 };
     }
     this._updateHint(t, rctx);
   }
@@ -63,9 +67,12 @@ export class Guru {
     if (!r || r.tEnd - r.tStart < 0.35 || t - this.hintT < 0.3) return;
     this.hintT = t;
     const mean = avg(r.recent), sd = std(r.recent), label = SWARA_LONG[r.sw];
+    const gam = r.gam && r.gam >= r.n / 2, gword = NAMING === 'carnatic' ? 'kampita' : 'andolan';
+    const span = gam ? Math.round(r.gamSpan / r.gam) : 0;
     if (!r.inRaga) this.hint = { cls: 'bad', text: `${label}? Not in ${rctx ? rctx.name : 'this raga'}. You want ${SWARA_LONG[r.suggest]}.` };
-    else if (mean < -18) this.hint = { cls: 'warn', text: `${label} is flat by ${Math.round(-mean)}¢ — lift it a little.` };
-    else if (mean > 18) this.hint = { cls: 'warn', text: `${label} is sharp by ${Math.round(mean)}¢ — ease it down.` };
+    else if (mean < -18) this.hint = { cls: 'warn', text: `${label}${gam ? `'s ${gword}` : ''} is anchored flat by ${Math.round(-mean)}¢ — lift it a little.` };
+    else if (mean > 18) this.hint = { cls: 'warn', text: `${label}${gam ? `'s ${gword}` : ''} is anchored sharp by ${Math.round(mean)}¢ — ease it down.` };
+    else if (gam) this.hint = { cls: 'good', text: `${label} with ${gword}, swinging about ${span}¢ — anchored in tune.` };
     else if (sd > 22) this.hint = { cls: 'warn', text: `Hold ${label} steadier — it is wavering ±${Math.round(sd)}¢.` };
     else this.hint = { cls: 'good', text: `${label} — in tune.` };
   }
@@ -133,6 +140,13 @@ export class Guru {
       say('warn', `Your ${SWARA_LONG[r.sw]} is centred but it wobbles. You are leaving it before it has settled. Take a fuller breath, hold ${SWARA_NAMES[r.sw]} until the line stands still, and only then move.`);
     }
 
+    // --- gamaka ---
+    const gamSw = Object.entries(this.per).filter(([, p]) => p.gamaka >= 2).sort((a, b) => b[1].gamaka - a[1].gamaka);
+    if (gamSw.length) {
+      const gword = NAMING === 'carnatic' ? 'kampita' : 'andolan';
+      const parts = gamSw.slice(0, 4).map(([sw, p]) => { const d = p.gamDev / p.gamaka; return `${SWARA_NAMES[sw]} ${times(p.gamaka)}, swinging about ${Math.round(p.gamSpan / p.gamaka)}¢${Math.abs(d) > 18 ? `, anchored ${Math.round(Math.abs(d))}¢ ${d > 0 ? 'sharp' : 'flat'}` : ', well anchored'}` });
+      say('', `You used ${gword} on ${listWords(parts)}. I judged those by where the swing is anchored, not by every moment of it.`);
+    }
     // --- raga discipline ---
     const dirSlips = this._directionSlips(rctx);
     let strayed = false;

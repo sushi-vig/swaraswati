@@ -1,5 +1,6 @@
 import { SWARA_ORDER, SWARA_NAMES, SWARA_LONG, OCT_NAMES, CENTS_JI, CENTS_ET, NOTE_NAMES, midiToHz, hzToMidi, noteName, nearestSwara, swaraLabel, tokens, setNaming, kattaiOf, harmoniumKeyOf } from './music.js';
 import { ShrutiPetti, SHRUTI_MODES } from './shruti.js';
+import { GamakaTracker } from './gamaka.js';
 import { RAGAS, ragaSwaraSet, ragaDirectionSets, melaName } from './ragas.js';
 import { TAALS, matraMeta, thekaOf, bolLabel } from './taals.js';
 import { Tanpura, VOICES, FIRST_STRING } from './tanpura.js';
@@ -14,7 +15,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, gamaka: { hindustani: false, carnatic: true }, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -23,6 +24,7 @@ if (settings.drone && settings.drone !== 'auto' && !settings.tanpurasMigrated) {
 settings.tanpurasMigrated = true;
 settings.sm = Object.assign({}, defaults.sm, settings.sm || {});
 settings.shruti = Object.assign({}, defaults.shruti, settings.shruti || {});
+settings.gamaka = Object.assign({}, defaults.gamaka, settings.gamaka || {});
 // Zoom scale 3 (2026-11): octaves visible = 6 - 2×zoom, default 2× = two octaves around Sa..Sa'. Older saved zooms reset.
 if (settings.zoomScale !== 3) { settings.zoom = 2; settings.zoomScale = 3; }
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
@@ -33,6 +35,9 @@ let lastKitInfo = '';
 let ctx = null, master = null, tanpura = null, tanpuras = [], swarmandal = null, shruti = null, tabla = null, tracker = null, micStream = null, micSource = null, testTone = null;
 const guru = new Guru();
 const drill = new Drill();
+const gamaka = new GamakaTracker();
+const gamakaOn = () => !!settings.gamaka[settings.tradition];
+let anchorCents = [];   // allowed swara positions (cents) the gamaka tracker may anchor to
 let micOn = false;
 
 function audio() {
@@ -137,19 +142,23 @@ function onFrame(fr) {
     med.push(raw); if (med.length > 3) med.shift();
     const sorted = med.slice().sort((a, b) => a - b);
     const c = sorted[sorted.length >> 1];
-    const info = nearestSwara(c, cmap());
-    const rInfo = ragaSet ? nearestSwara(c, cmap(), ragaSet) : info;
+    const gap = lastVoicedT < 0 ? 1 : t - lastVoicedT;
+    if (gap > 0.12) gamaka.cut();
+    // Gamaka-aware: when the note is oscillating on purpose, score the pitch the swing is anchored on.
+    const gam = gamakaOn() ? gamaka.push(t, c, anchorCents) : null;
+    const sc = gam ? gam.anchor : c;
+    const info = nearestSwara(sc, cmap());
+    const rInfo = ragaSet ? nearestSwara(sc, cmap(), ragaSet) : info;
     const inRaga = !ragaSet || ragaSet.has(info.sw);
     pushHist(t, c, rInfo.dev);
-    const gap = lastVoicedT < 0 ? 1 : t - lastVoicedT;
-    if (gap > 0.12 || Math.abs(c - lastCents) > 70) registerOnset(t);
+    if (gap > 0.12 || Math.abs(c - lastCents) > (gam ? gam.span + 70 : 70)) registerOnset(t);
     lastVoicedT = t; lastCents = c;
-    current = { t, cents: c, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity };
-    guru.addFrame(t, info, rInfo, inRaga, ragaCtx);
-    drill.addFrame(t, c, info);
+    current = { t, cents: c, scored: sc, gam, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity };
+    guru.addFrame(t, info, rInfo, inRaga, ragaCtx, gam);
+    drill.addFrame(t, sc, info);
     if (detectSa) detectSa.push(fr.f0);
   } else {
-    med.length = 0;
+    med.length = 0; gamaka.cut();
     pushHist(t, NaN, 0);
     current = null;
     guru.addSilence(t);
@@ -329,11 +338,12 @@ let lastMatraIdx = -1, lastDrillIdx = -2, drillBuilt = false;
 
 function updateNow() {
   if (current && ctx && ctx.currentTime - current.t < 0.35) {
-    const { info, rInfo, inRaga, hz } = current;
-    $('swaraBig').textContent = SWARA_NAMES[info.sw];
+    const { info, rInfo, inRaga, hz, gam } = current;
+    $('swaraBig').textContent = SWARA_NAMES[info.sw] + (gam ? '~' : '');
     $('swaraOct').textContent = OCT_NAMES[String(info.oct)] || '';
     $('swaraBig').style.color = inRaga ? '' : 'var(--bad)';
-    $('swaraSub').textContent = inRaga ? `${SWARA_LONG[info.sw]}${ragaSet ? ' · in ' + raga().name : ''}` : `${SWARA_LONG[info.sw]} — not in ${raga().name} (nearest: ${SWARA_LONG[rInfo.sw]})`;
+    const gtxt = gam ? ` · ${settings.tradition === 'carnatic' ? 'kampita' : 'andolan'} swinging ${Math.round(gam.span)}¢${gam.rate ? ' at ' + gam.rate.toFixed(1) + '/s' : ''}${gam.anchored ? '' : ', no clear anchor'}` : '';
+    $('swaraSub').textContent = (inRaga ? `${SWARA_LONG[info.sw]}${ragaSet ? ' · in ' + raga().name : ''}` : `${SWARA_LONG[info.sw]} — not in ${raga().name} (nearest: ${SWARA_LONG[rInfo.sw]})`) + gtxt;
     const d = Math.max(-50, Math.min(50, info.dev));
     $('needle').style.left = `${50 + d}%`;
     $('needle').style.background = devColor(info.dev);
@@ -491,7 +501,7 @@ function setTradition(t) {
   const r = raga();
   if (r.tradition !== 'any' && r.tradition !== settings.tradition) settings.raga = DEFAULT_RAGA[settings.tradition];
   if ((taal().tradition === 'carnatic') !== (settings.tradition === 'carnatic')) { settings.taal = DEFAULT_TAAL[settings.tradition]; settings.theka = 0; }
-  save(); $('ragaFind').value = ''; fillRagaSelect(); fillTaalSelect(); refreshSa(); refreshRaga(); buildTaalStrip(); applyAudioSettings();
+  save(); $('ragaFind').value = ''; fillRagaSelect(); fillTaalSelect(); refreshSa(); refreshRaga(); buildTaalStrip(); applyAudioSettings(); $('gamakaAware').checked = gamakaOn(); gamaka.reset();
 }
 function fillSelect(sel, items, value) {
   sel.innerHTML = '';
@@ -517,6 +527,7 @@ function refreshRaga() {
   const r = raga();
   ragaSet = r.id === 'chromatic' ? null : ragaSwaraSet(r);
   setNaming(settings.tradition, ragaSet);
+  { const cm = cmap(), set = ragaSet || new Set(SWARA_ORDER); anchorCents = []; for (let oct = -2; oct <= 2; oct++) for (const sw of SWARA_ORDER) if (set.has(sw)) anchorCents.push(cm[sw] + oct * 1200); }
   ragaCtx = ragaSet ? { name: r.name, raga: r, set: ragaSet, ...ragaDirectionSets(r) } : null;
   const car = r.tradition === 'carnatic';
   const origin = car ? (r.mela && !r.id.startsWith('mela') ? `janya of mela ${r.mela} ${melaName(r.mela)}` : r.chakra ? `melakarta ${r.mela} · ${r.chakra} chakra` : '')
@@ -633,7 +644,8 @@ async function toggleTestTone() {
   if (micOn) toggleMic();
   const o = ctx.createOscillator(); o.type = 'sawtooth';
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.5; const lfoG = ctx.createGain(); lfoG.gain.value = 5; lfo.connect(lfoG).connect(o.detune);
+  const deep = /[?&]gamaka/.test(location.search);   // ?gamaka: a kampita-sized swing, for checking gamaka-aware scoring
+  const lfo = ctx.createOscillator(); lfo.frequency.value = deep ? 5 : 5.5; const lfoG = ctx.createGain(); lfoG.gain.value = deep ? 110 : 5; lfo.connect(lfoG).connect(o.detune);
   const g = ctx.createGain(); g.gain.value = 0.12;
   const monitor = ctx.createGain(); monitor.gain.value = 0.25;
   o.connect(lp).connect(g); g.connect(monitor).connect(master);
@@ -671,7 +683,7 @@ function showReport() {
 
 // ---------- presets ----------
 const PRESETS_KEY = 'swaraswati-presets-v1';
-const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'zoomScale', 'tanpuras', 'sm', 'tradition', 'shruti'];
+const PRESET_FIELDS = ['saMidi', 'saCents', 'tuning', 'raga', 'taal', 'theka', 'bpm', 'layakari', 'rampStep', 'rampMax', 'tablaVol', 'tablaEngine', 'latencyMs', 'sensitivity', 'showAll', 'pattern', 'perNote', 'zoom', 'zoomScale', 'tanpuras', 'sm', 'tradition', 'shruti', 'gamaka'];
 let presets = [];
 function loadPresets() { try { presets = JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { presets = []; } if (!Array.isArray(presets)) presets = []; }
 function savePresets() { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* full or private */ } }
@@ -690,6 +702,7 @@ function applyPreset(p) {
     if (k === 'tanpuras' && Array.isArray(v.tanpuras)) v.tanpuras.forEach((t, i) => { if (settings.tanpuras[i]) Object.assign(settings.tanpuras[i], t); });
     else if (k === 'sm') Object.assign(settings.sm, v.sm);
     else if (k === 'shruti') Object.assign(settings.shruti, v.shruti);
+    else if (k === 'gamaka') Object.assign(settings.gamaka, v.gamaka);
     else settings[k] = v[k];
   }
   save();
@@ -815,7 +828,7 @@ function syncUI() {
   $('smAuto').value = settings.sm.auto; $('smRange').value = settings.sm.range; $('smDir').value = settings.sm.dir; $('smGap').value = settings.sm.gap; $('smVol').value = settings.sm.vol;
   $('smGapText').textContent = `${settings.sm.gap} ms`;
   $('sens').value = settings.sensitivity; if (tracker) tracker.setSensitivity(settings.sensitivity);
-  $('showAll').checked = settings.showAll;
+  $('showAll').checked = settings.showAll; $('gamakaAware').checked = gamakaOn();
   $('tablaVol').value = settings.tablaVol;
   $('bpm').value = settings.bpm; $('bpmNum').value = settings.bpm; setLayaWord();
   $('layakariSel').value = settings.layakari; $('rampStep').value = settings.rampStep; $('rampMax').value = settings.rampMax;
@@ -858,7 +871,8 @@ function init() {
   const shUpd = (key) => (e) => { settings.shruti[key] = key === 'mode' ? e.target.value : Number(e.target.value); save(); if (key === 'fine') $('shrutiFineText').textContent = `${settings.shruti.fine > 0 ? '+' : ''}${settings.shruti.fine} ¢`; if (ctx) applyAudioSettings(); };
   $('shrutiMode').onchange = shUpd('mode'); $('shrutiVol').oninput = shUpd('vol'); $('shrutiTone').oninput = shUpd('tone'); $('shrutiFine').oninput = shUpd('fine');
   $('btnShruti').onclick = toggleShruti;
-  $('tuningSel').onchange = (e) => { settings.tuning = e.target.value; save(); applyAudioSettings(); };
+  $('tuningSel').onchange = (e) => { settings.tuning = e.target.value; save(); refreshRaga(); };
+  $('gamakaAware').onchange = (e) => { settings.gamaka[settings.tradition] = e.target.checked; save(); gamaka.reset(); };
   $('sens').oninput = (e) => { settings.sensitivity = Number(e.target.value); save(); if (tracker) tracker.setSensitivity(settings.sensitivity); };
   $('showAll').onchange = (e) => { settings.showAll = e.target.checked; save(); };
   $('btnTest').onclick = toggleTestTone;
@@ -920,4 +934,4 @@ function init() {
 init();
 
 // Debug hook (harmless in production): inspect live state from the console.
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

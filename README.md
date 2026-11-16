@@ -62,6 +62,10 @@ tanpura and tabla are not picked up as "your voice".
   vakra and bhashanga remarks and characteristic phrases. The Find box searches both traditions by name, thaat or mela number.
 - **Shruti petti** (`P`): a continuous reed drone, Sa · Pa · lower Sa (or Ma, or upper Sa, or Sa alone), with volume, tone and
   fine tune. Runs alongside or instead of the tanpuras.
+- **Gamaka-aware scoring** (on by default in Carnatic mode, a checkbox under Mic): an oscillating note, a kampita or
+  andolan, is judged by the pitch the swing is anchored on, not frame by frame. The display shows the anchored swara
+  with a tilde and the swing's width and rate; the guru reports which swaras carried gamaka and whether the anchor sat
+  true; the drill scores the anchor. Plain slides and steady notes are untouched.
 - **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
 - **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.
@@ -96,6 +100,7 @@ tanpura and tabla are not picked up as "your voice".
 | `js/swarmandal.js` | Raga-tuned swarmandal strum. |
 | `js/tabla.js` | Theka scheduler (layakari, ramp), synthesised tabla fallback and mridangam, matra lookup for timing feedback. |
 | `js/samples.js` | Sampled tabla kit: loads `samples/tabla/*.flac`, maps bols to takes, pitch-shifts to Sa. |
+| `js/gamaka.js` | Oscillation detector: finds a kampita/andolan and the pitch it is anchored on. |
 | `js/guru.js` | Per-swara statistics, live hints, session report. |
 | `js/drill.js` | Alankar pattern generation and note-by-note scoring. |
 | `js/app.js` | UI wiring, ring-buffer pitch history, canvas rendering. |
@@ -116,7 +121,6 @@ Example: `.N R G M D N S'`.
 ## Ideas for later
 
 - Dhatu varisai and the remaining sarali variants; recorded mridangam strokes if a CC0 set turns up.
-- Gamaka-aware scoring for Carnatic mode: judge the anchor of an oscillation rather than every frame.
 - Lehra (a looping melody over the theka for taal practice).
 - Replay a recording with its pitch trace.
 - Per-raga pakad / chalan drills and meend detection.

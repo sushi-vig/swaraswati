@@ -6,7 +6,9 @@ that tells you which swaras drift, by how much, and when you stray outside the r
 
 No build step, no dependencies. Everything is vanilla JS + Web Audio + Canvas.
 
-## Run it
+**Live:** <https://sushi-vig.github.io/swaraswati/> (GitHub Pages, served from `main`; every push updates it within a minute).
+
+## Run it locally
 
 AudioWorklets cannot load from `file://`, so serve the folder over HTTP:
 

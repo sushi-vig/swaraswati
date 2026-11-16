@@ -13,7 +13,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 1, zoomScale: 2, saCents: 0, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -21,8 +21,8 @@ settings.tanpuras = settings.tanpuras.map((t, i) => Object.assign({}, defaults.t
 if (settings.drone && settings.drone !== 'auto' && !settings.tanpurasMigrated) { settings.tanpuras[0].string = settings.drone; settings.tanpuras[0].vol = settings.tanpuraVol; }
 settings.tanpurasMigrated = true;
 settings.sm = Object.assign({}, defaults.sm, settings.sm || {});
-// Zoom scale 2 (2026-11): 1× shows ~7 octaves and 34 s, steps are ×2. Older saved zooms meant something else, so reset.
-if (settings.zoomScale !== 2) { settings.zoom = 1; settings.zoomScale = 2; }
+// Zoom scale 3 (2026-11): octaves visible = 6 - 2×zoom, default 2× = two octaves around Sa..Sa'. Older saved zooms reset.
+if (settings.zoomScale !== 3) { settings.zoom = 2; settings.zoomScale = 3; }
 function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
 
@@ -167,18 +167,23 @@ function registerOnset(t) {
 const cv = $('pitchCanvas');
 const g = cv.getContext('2d', { alpha: false });
 let cw = 0, chh = 0, dpr = 1;
-const LABEL_W = 54, BASE_WINDOW_SEC = 34;
-// Zoom scale: at 1× the trace spans BASE_SPAN cents (about 7 octaves, so a whole voice sits still on screen) and
-// BASE_WINDOW_SEC seconds; each step doubles. 8× is the old close view (one octave), 64× reads single cents.
-const ZOOM_MIN = 0.5, ZOOM_MAX = 64, BASE_SPAN = 8800, BASE_PAD = 2000, FOLLOW_ABOVE = 12;
-const view = { lo: -3850, hi: 4950 };
-// Vertical span shrinks with the zoom factor; the time window shrinks more gently (with its square root).
-const zoom = () => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, settings.zoom || 1));
-const windowSec = () => Math.min(48, Math.max(4, BASE_WINDOW_SEC / Math.sqrt(zoom())));
+const LABEL_W = 54;
+// Zoom scale: octaves visible = 6 - 2×zoom, so 0.5× shows five octaves, 1× four, 1.5× three, 2× (default) two
+// (the main octave with half an octave above and below), 2.5× exactly one. Past 2.5× the span halves every
+// 0.5 step (3× half an octave, 4× an eighth) and the view follows the note so single cents can be read.
+const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 0.5, ZOOM_DEFAULT = 2, OCT_CENTRE = 600;
+const view = { lo: -600, hi: 1800 };
+let viewCentre = OCT_CENTRE;
+const zoom = () => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, settings.zoom || ZOOM_DEFAULT));
+const octavesFor = (z) => (z <= 2.5 ? 6 - 2 * z : Math.pow(2, -(z - 2.5) * 2));
+const spanCents = () => octavesFor(zoom()) * 1200;
+// Time window: 12 s at two octaves, longer when zoomed out, shorter when reading cents.
+const windowSec = () => Math.min(24, Math.max(4, 12 * Math.sqrt(octavesFor(zoom()) / 2)));
+const octLabel = (o) => (o >= 1 ? `${o % 1 ? o.toFixed(1) : o} oct` : o >= 0.5 ? '½ oct' : o >= 0.25 ? '¼ oct' : '⅛ oct');
 function setZoom(z) {
   settings.zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100; save();
   const t = settings.zoom;
-  $('zoomText').textContent = `${t >= 10 ? Math.round(t) : t % 1 ? t.toFixed(1) : t}×`;
+  $('zoomText').textContent = `${t % 1 ? t.toFixed(t * 10 % 1 ? 2 : 1) : t}× · ${octLabel(octavesFor(t))}`;
 }
 
 function resize() {
@@ -200,26 +205,23 @@ function draw() {
   const xOf = (t) => cw - (now - t) * pxPerSec;
   const tMin = now - WINDOW_SEC;
 
-  // auto-range on visible voiced points
-  let mn = Infinity, mx = -Infinity;
-  for (let k = 0; k < hCount; k++) {
-    const i = (hHead - 1 - k + N) % N;
-    if (hT[i] < tMin) break;
-    const c = hC[i]; if (c !== c) continue; // NaN check
-    if (c < mn) mn = c; if (c > mx) mx = c;
+  // Vertical frame. Zoomed out (a full octave or more): a fixed frame centred on the main octave, nudged only
+  // when the sung note leaves it; it drifts back to Sa..Sa' after a few seconds of silence.
+  // Zoomed in (under an octave): the frame follows the note being sung.
+  const span = spanCents();
+  if (span < 1200) {
+    if (current) viewCentre = current.cents;
+  } else {
+    // ease home to Sa..Sa', then nudge only as far as the sung note needs
+    viewCentre += (OCT_CENTRE - viewCentre) * 0.02;
+    if (current) {
+      const margin = Math.min(300, span * 0.12);
+      const lo = viewCentre - span / 2 + margin, hi = viewCentre + span / 2 - margin;
+      if (current.cents < lo) viewCentre -= lo - current.cents;
+      else if (current.cents > hi) viewCentre += current.cents - hi;
+    }
   }
-  if (mn !== Infinity) {
-    // Zoomed in: follow the latest pitch tightly; zoomed out: fit every visible point.
-    const pad = BASE_PAD / z, minSpan = BASE_SPAN / z;
-    let lo, hi;
-    if (z > FOLLOW_ABOVE && current) { const span = Math.max(minSpan, (mx - mn) / z + pad); lo = current.cents - span / 2; hi = current.cents + span / 2; }
-    else { lo = mn - pad; hi = mx + pad; if (hi - lo < minSpan) { const mid = (lo + hi) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; } }
-    view.lo += (lo - view.lo) * 0.05; view.hi += (hi - view.hi) * 0.05;
-  } else if (Math.abs((view.hi - view.lo) - BASE_SPAN / z) > 1) {
-    // nothing sung yet: settle on the default span for this zoom level around the current centre
-    const mid = (view.lo + view.hi) / 2, span = BASE_SPAN / z;
-    view.lo += (mid - span / 2 - view.lo) * 0.05; view.hi += (mid + span / 2 - view.hi) * 0.05;
-  }
+  view.lo += (viewCentre - span / 2 - view.lo) * 0.08; view.hi += (viewCentre + span / 2 - view.hi) * 0.08;
 
   g.fillStyle = '#f6eedb'; g.fillRect(0, 0, cw, chh);
 
@@ -609,7 +611,7 @@ function applyPreset(p) {
   const v = p.settings || {};
   for (const k of PRESET_FIELDS) {
     if (!(k in v)) continue;
-    if (k === 'zoom' && v.zoomScale !== 2) continue; // zoom saved on the old scale: keep the current one
+    if (k === 'zoom' && v.zoomScale !== 3) continue; // zoom saved on the old scale: keep the current one
     if (k === 'tanpuras' && Array.isArray(v.tanpuras)) v.tanpuras.forEach((t, i) => { if (settings.tanpuras[i]) Object.assign(settings.tanpuras[i], t); });
     else if (k === 'sm') Object.assign(settings.sm, v.sm);
     else settings[k] = v[k];
@@ -797,13 +799,13 @@ function init() {
   $('btnResetReport').onclick = () => { guru.reset(); $('reportBox').innerHTML = ''; };
 
   // zoom: buttons, ⌘/Ctrl+wheel or trackpad pinch over the trace, keyboard + / - / 0
-  $('zoomIn').onclick = () => setZoom(zoom() * 2);
-  $('zoomOut').onclick = () => setZoom(zoom() / 2);
-  $('zoomReset').onclick = () => setZoom(1);
+  $('zoomIn').onclick = () => setZoom(zoom() + ZOOM_STEP);
+  $('zoomOut').onclick = () => setZoom(zoom() - ZOOM_STEP);
+  $('zoomReset').onclick = () => setZoom(ZOOM_DEFAULT);
   cv.addEventListener('wheel', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
-    setZoom(zoom() * Math.exp(-e.deltaY * 0.01));
+    setZoom(zoom() - e.deltaY * 0.004);
   }, { passive: false });
   let pinch = null;
   cv.addEventListener('touchstart', (e) => { if (e.touches.length === 2) pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z: zoom() }; }, { passive: true });
@@ -811,7 +813,7 @@ function init() {
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault();
     const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    setZoom(pinch.z * (d / pinch.d));
+    setZoom(pinch.z + Math.log2(d / pinch.d) * 1.5);
   }, { passive: false });
   cv.addEventListener('touchend', () => { pinch = null; });
 
@@ -823,9 +825,9 @@ function init() {
     else if (e.key === 's' || e.key === 'S') strum();
     else if (e.key === 'r' || e.key === 'R') toggleRecording();
     else if (e.key === 'm' || e.key === 'M') toggleMic();
-    else if (e.key === '+' || e.key === '=') setZoom(zoom() * 2);
-    else if (e.key === '-' || e.key === '_') setZoom(zoom() / 2);
-    else if (e.key === '0') setZoom(1);
+    else if (e.key === '+' || e.key === '=') setZoom(zoom() + ZOOM_STEP);
+    else if (e.key === '-' || e.key === '_') setZoom(zoom() - ZOOM_STEP);
+    else if (e.key === '0') setZoom(ZOOM_DEFAULT);
   });
 
   requestAnimationFrame(loop);

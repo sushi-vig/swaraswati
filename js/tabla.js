@@ -42,11 +42,18 @@ export class Tabla {
     this.onTempo = null;        // callback(bpm) when the ramp changes the tempo
     this.accent = 1;            // 0..1 how strongly sam/tali are accented
     this.engine = 'samples';    // 'samples' (recorded strokes) or 'synth'
+    this.strokeTimes = [];      // when each stroke fires (ctx time), so the pitch tracker can ignore the thud
     this.kit = new SampleKit(ctx, this.out);
     this.kit.setSa(this.dayan);
     this.kitPromise = this.kit.load().then((ok) => { if (this.onKit) this.onKit(ok, this.kit.failed); return ok; });
   }
   get usingSamples() { return this.engine === 'samples' && this.kit.ready; }
+  // Is a stroke sounding around time t? `lat` = output and room delay in seconds. Window: 20 ms before to 80 ms after the hit.
+  strokeNear(t, lat = 0.04) {
+    if (!this.running) return false;
+    for (let i = this.strokeTimes.length - 1; i >= 0; i--) { const d = t - (this.strokeTimes[i] + lat); if (d > 0.5) break; if (d >= -0.02 && d <= 0.08) return true; }
+    return false;
+  }
   get instrument() { return this.taal.tradition === 'carnatic' ? 'mridangam' : 'tabla'; }
   _noiseBuffer() {
     const b = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
@@ -137,7 +144,11 @@ export class Tabla {
   _playBols(str, t, dur, vel) {
     const toks = str.split(/\s+/).filter(Boolean), slot = dur / toks.length;
     toks.forEach((bol, i) => {
-      for (const s of strokesFor(bol, this.instrument)) for (const h of s.hits) this[h](t + i * slot + s.at * slot, vel, slot);
+      for (const s of strokesFor(bol, this.instrument)) {
+        const at = t + i * slot + s.at * slot;
+        if (s.hits.length) { this.strokeTimes.push(at); if (this.strokeTimes.length > 128) this.strokeTimes.splice(0, 64); }
+        for (const h of s.hits) this[h](at, vel, slot);
+      }
     });
   }
 

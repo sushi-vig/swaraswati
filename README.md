@@ -66,6 +66,10 @@ tanpura and tabla are not picked up as "your voice".
   andolan, is judged by the pitch the swing is anchored on, not frame by frame. The display shows the anchored swara
   with a tilde and the swing's width and rate; the guru reports which swaras carried gamaka and whether the anchor sat
   true; the drill scores the anchor. Plain slides and steady notes are untouched.
+- **Mic on speakers**: the browser's echo cancellation is on by default, so the tanpura and drum the page plays are
+  subtracted from the microphone (checkbox under Mic; turn off on headphones for the rawest signal). A level meter shows
+  what the detector receives against the noise floor it must clear, and frames that coincide with a drum stroke are drawn
+  but never start a note or get scored.
 - **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
 - **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.

@@ -100,6 +100,73 @@ export const TAALS = [
   ], 'Nine beats, uncommon; good for odd-cycle practice.'),
 ];
 
+// ---- Carnatic talas ----
+// Angas: I = laghu (a clap then jati-1 finger counts), O = dhrutam (clap, wave), U = anudhrutam (clap).
+// The 35-tala scheme is seven tala shapes in five jatis; the chapu talas sit outside it.
+const JATI = { tisra: 3, chatusra: 4, khanda: 5, misra: 7, sankeerna: 9 };
+const SUB = { 3: '₃', 4: '₄', 5: '₅', 7: '₇', 9: '₉' };
+const SHAPES = { dhruva: 'IOII', matya: 'IOI', rupaka: 'OI', jhampa: 'IUO', triputa: 'IOO', ata: 'IIOO', eka: 'I' };
+const cap = (w) => w[0].toUpperCase() + w.slice(1);
+function angaLayout(shape, jati) {
+  const vibhags = [], marks = [], kriya = [];
+  for (const a of shape) {
+    if (a === 'I') { vibhags.push(jati); marks.push('I' + SUB[jati]); kriya.push('clap'); for (let k = 2; k <= jati; k++) kriya.push(String(k)); }
+    else if (a === 'O') { vibhags.push(2); marks.push('O'); kriya.push('clap', 'wave'); }
+    else { vibhags.push(1); marks.push('U'); kriya.push('clap'); }
+  }
+  return { vibhags, marks, kriya };
+}
+// Sollukattu (mridangam syllables) built from the kriya: claps strong, counts soft, waves open.
+function sollukattu(kriya, extra = []) {
+  const n = kriya.length;
+  const plain = kriya.map((k, i) => (i === 0 ? 'tham' : k === 'clap' ? 'tha' : k === 'wave' ? 'dhi' : (Number(k) % 2 ? 'ta' : 'ki')));
+  const chat = kriya.map((k, i) => (i === 0 ? 'tham ka dhi mi' : i % 2 ? 'tha ka jo nu' : 'tha ka dhi mi'));
+  const tisra = kriya.map((k, i) => (i === 0 ? 'tham ki ta' : k === 'clap' ? 'tha ki ta' : 'dhi ki ta'));
+  return [['Kriya (one stroke per akshara)', plain], ['Sarva laghu, chatusra nadai', chat], ['Sarva laghu, tisra nadai', tisra], ...extra].map(([name, bols]) => ({ name, bols: bols.length === n ? bols : bols.slice(0, n) }));
+}
+const C = (id, name, shape, jati, note = '', extra = []) => {
+  const lay = angaLayout(shape, jati);
+  return { id, name, tradition: 'carnatic', matras: lay.kriya.length, vibhags: lay.vibhags, marks: lay.marks, kriya: lay.kriya, note, thekas: sollukattu(lay.kriya, extra) };
+};
+const COMMON = [
+  C('adi', 'Adi (8)', 'IOO', 4, 'Chatusra-jati Triputa: laghu 4, dhrutam, dhrutam. The tala of most kritis and all beginners\' exercises.',
+    [['Standard', ['tham', 'ki ta', 'tha ka', 'dhi mi', 'tha', 'ka', 'dhi', 'mi']]]),
+  C('rupaka', 'Rupaka (6)', 'OI', 4, 'Chatusra-jati Rupaka: dhrutam then laghu 4. Often counted as three beats of two.'),
+  C('tisra_eka', 'Tisra Eka (3)', 'I', 3, 'A single laghu of three: clap, two counts.'),
+  C('chatusra_eka', 'Chatusra Eka (4)', 'I', 4, 'A single laghu of four.'),
+  C('khanda_eka', 'Khanda Eka (5)', 'I', 5, 'A single laghu of five.'),
+  C('jhampa', 'Misra Jhampa (10)', 'IUO', 7, 'Laghu 7, anudhrutam, dhrutam: 7 + 1 + 2.'),
+  C('ata', 'Khanda Ata (14)', 'IIOO', 5, 'Two laghus of five then two dhrutams: 5 + 5 + 2 + 2. The tala of many varnams.'),
+  C('matya', 'Chatusra Matya (10)', 'IOI', 4, 'Laghu, dhrutam, laghu: 4 + 2 + 4.'),
+  C('dhruva', 'Chatusra Dhruva (14)', 'IOII', 4, 'Laghu, dhrutam, laghu, laghu: 4 + 2 + 4 + 4.'),
+  C('tisra_triputa', 'Tisra Triputa (7)', 'IOO', 3, 'Laghu 3, dhrutam, dhrutam: 3 + 2 + 2.'),
+];
+const CHAPU = [
+  { id: 'misra_chapu', name: 'Misra Chapu (7)', tradition: 'carnatic', matras: 7, vibhags: [3, 2, 2], marks: ['X', '2', '3'], kriya: ['clap', '2', '3', 'clap', '2', 'clap', '2'],
+    note: 'Seven in 3 + 2 + 2, claps on 1, 4 and 6. Outside the 35-tala scheme; the tala of many padams and bhajans.',
+    thekas: [{ name: 'Ta ki ta · ta ka · dhi mi', bols: ['tham', 'ki', 'ta', 'tha', 'ka', 'dhi', 'mi'] }, { name: 'Filled', bols: ['tham ka', 'dhi mi', 'tha ka', 'jo nu', 'tha ka', 'dhi mi', 'tha ka'] }] },
+  { id: 'khanda_chapu', name: 'Khanda Chapu (5)', tradition: 'carnatic', matras: 5, vibhags: [2, 3], marks: ['X', '2'], kriya: ['clap', '2', 'clap', '2', '3'],
+    note: 'Five in 2 + 3, claps on 1 and 3. Outside the 35-tala scheme.',
+    thekas: [{ name: 'Ta ka · ta ki ta', bols: ['tham', 'ka', 'tha', 'ki', 'ta'] }, { name: 'Filled', bols: ['tham ka', 'dhi mi', 'tha ka', 'jo nu', 'tha ka'] }] },
+  { id: 'adi2', name: 'Adi, 2 kalai (16)', tradition: 'carnatic', matras: 16, vibhags: [8, 4, 4], marks: ['I₄', 'O', 'O'],
+    kriya: ['clap', '', '2', '', '3', '', '4', '', 'clap', '', 'wave', '', 'clap', '', 'wave', ''],
+    note: 'Adi with every kriya lasting two aksharas, for slow kritis.',
+    thekas: [{ name: 'Kriya', bols: ['tham', 'ka', 'ta', 'ka', 'ki', 'ta', 'ta', 'ka', 'tha', 'ka', 'dhi', 'mi', 'tha', 'ka', 'dhi', 'mi'] },
+      { name: 'Sarva laghu', bols: ['tham ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu', 'tha ka dhi mi', 'tha ka jo nu'] }] },
+];
+// The rest of the 35-tala scheme.
+const have = new Set(COMMON.map((t) => `${t.vibhags.join('.')}:${t.marks.join('.')}`));
+const SCHEME = [];
+for (const [shape, letters] of Object.entries(SHAPES)) for (const [jati, n] of Object.entries(JATI)) {
+  const lay = angaLayout(letters, n), key = `${lay.vibhags.join('.')}:${lay.marks.join('.')}`;
+  if (have.has(key)) continue;
+  SCHEME.push(C(`${jati}_${shape}`, `${cap(jati)} ${cap(shape)} (${lay.kriya.length})`, letters, n, `${cap(jati)}-jati ${cap(shape)}: ${lay.vibhags.join(' + ')}.`));
+}
+export const CARNATIC_TAALS = [...COMMON, ...CHAPU];
+export const SCHEME_TAALS = SCHEME;
+for (const t of TAALS) t.tradition = 'hindustani';
+TAALS.push(...CARNATIC_TAALS, ...SCHEME_TAALS);
+
 export const thekaOf = (taal, idx = 0) => taal.thekas[Math.min(Math.max(0, idx | 0), taal.thekas.length - 1)];
 
 // Returns, per matra, the index of its vibhag and whether it starts one.
@@ -107,7 +174,7 @@ export function matraMeta(taal) {
   const out = [];
   let v = 0, inV = 0;
   for (let i = 0; i < taal.matras; i++) {
-    out.push({ vibhag: v, startsVibhag: inV === 0, mark: inV === 0 ? taal.marks[v] : '' });
+    out.push({ vibhag: v, startsVibhag: inV === 0, mark: inV === 0 ? taal.marks[v] : '', kriya: taal.kriya ? taal.kriya[i] || '' : '' });
     inV++;
     if (inV >= taal.vibhags[v]) { v++; inV = 0; }
   }

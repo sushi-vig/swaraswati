@@ -29,6 +29,7 @@ function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } cat
 function save() { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch { /* private mode */ } }
 
 // ---------- audio graph ----------
+let lastKitInfo = '';
 let ctx = null, master = null, tanpura = null, tanpuras = [], swarmandal = null, shruti = null, tabla = null, tracker = null, micStream = null, micSource = null, testTone = null;
 const guru = new Guru();
 const drill = new Drill();
@@ -45,8 +46,8 @@ function audio() {
     swarmandal = new Swarmandal(ctx, master);
     shruti = new ShrutiPetti(ctx, master);
     tabla = new Tabla(ctx, master);
-    tabla.onKit = (ok, why) => { $('kitInfo').textContent = ok ? '26 strokes loaded' : `recordings unavailable (${why}); using the synth`; if (!ok) { $('tablaEngine').value = 'synth'; } };
-    $('kitInfo').textContent = 'loading…';
+    tabla.onKit = (ok, why) => { lastKitInfo = ok ? '26 strokes loaded' : `recordings unavailable (${why}); using the synth`; if (!ok) { $('tablaEngine').value = 'synth'; } if (taal().tradition !== 'carnatic') $('kitInfo').textContent = lastKitInfo; };
+    lastKitInfo = 'loading…'; if (taal().tradition !== 'carnatic') $('kitInfo').textContent = lastKitInfo;
     applyAudioSettings();
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -233,7 +234,7 @@ function draw() {
   if (tabla && tabla.running) {
     for (const ev of tabla.events) {
       const x = xOf(ev.t); if (x < LABEL_W || x > cw) continue;
-      const meta = tabla.meta[ev.matra];
+      const meta = tabla.meta[ev.matra]; if (!meta) continue;
       g.strokeStyle = ev.matra === 0 ? 'rgba(125,42,30,0.55)' : meta.startsVibhag ? 'rgba(60,40,20,0.28)' : 'rgba(60,40,20,0.12)';
       g.lineWidth = ev.matra === 0 ? 2 : 1;
       g.beginPath(); g.moveTo(x, 0); g.lineTo(x, chh); g.stroke();
@@ -354,14 +355,18 @@ function buildTaalStrip() {
   if (settings.theka >= t.thekas.length) settings.theka = 0;
   const th = thekaOf(t, settings.theka);
   fillSelect($('thekaSel'), t.thekas.map((x, i) => ({ value: i, label: x.name })), settings.theka);
-  $('taalNote').textContent = `${t.vibhags.join(' + ')} · ${t.note || ''}`;
+  $('taalNote').textContent = `${t.vibhags.join(' + ')}${t.kriya ? ' · ' + t.marks.join(' ') : ''} · ${t.note || ''}`;
+  const car = t.tradition === 'carnatic';
+  $('tablaEngine').disabled = car;
+  $('kitInfo').textContent = car ? 'mridangam, synthesised (tuned to Sa)' : lastKitInfo;
   strip.innerHTML = '';
   let group = null;
   th.bols.forEach((bol, i) => {
     if (meta[i].startsVibhag) { group = document.createElement('div'); group.className = 'vibhag'; strip.appendChild(group); }
     const m = document.createElement('div');
     m.className = 'matra' + (i === 0 ? ' sam' : ''); m.dataset.i = i;
-    m.innerHTML = `<span class="mark">${meta[i].mark}</span>${bolLabel(bol)}<span class="num">${i + 1}</span>`;
+    const k = meta[i].kriya, kriya = k === 'clap' || k === 'wave' ? k : k ? 'count ' + k : '';
+    m.innerHTML = `<span class="mark">${meta[i].mark}</span>${bolLabel(bol)}<span class="num">${t.kriya ? kriya || '&nbsp;' : i + 1}</span>`;
     group.appendChild(m);
   });
   lastMatraIdx = -1;
@@ -466,11 +471,27 @@ function fillRagaSelect(query = '') {
   }
   sel.value = settings.raga;
 }
+const SCHEME_RE = /^(tisra|chatusra|khanda|misra|sankeerna)_(dhruva|matya|rupaka|jhampa|triputa|ata|eka)$/;
+const SCHEME_COMMON = ['tisra_eka', 'chatusra_eka', 'khanda_eka', 'tisra_triputa'];
+function fillTaalSelect() {
+  const sel = $('taalSel'); sel.innerHTML = '';
+  const isScheme = (t) => SCHEME_RE.test(t.id) && !SCHEME_COMMON.includes(t.id);
+  const groups = [
+    ['Hindustani taals', TAALS.filter((t) => t.tradition !== 'carnatic')],
+    ['Carnatic talas', TAALS.filter((t) => t.tradition === 'carnatic' && !isScheme(t))],
+    ['35-tala scheme, the rest', TAALS.filter((t) => t.tradition === 'carnatic' && isScheme(t))],
+  ];
+  const order = settings.tradition === 'carnatic' ? [groups[1], groups[2], groups[0]] : groups;
+  for (const [label, list] of order) { const og = document.createElement('optgroup'); og.label = label; for (const t of list) { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; og.appendChild(o); } sel.appendChild(og); }
+  sel.value = settings.taal;
+}
+const DEFAULT_TAAL = { hindustani: 'teentaal', carnatic: 'adi' };
 function setTradition(t) {
   settings.tradition = t === 'carnatic' ? 'carnatic' : 'hindustani';
   const r = raga();
   if (r.tradition !== 'any' && r.tradition !== settings.tradition) settings.raga = DEFAULT_RAGA[settings.tradition];
-  save(); $('ragaFind').value = ''; fillRagaSelect(); refreshSa(); refreshRaga();
+  if ((taal().tradition === 'carnatic') !== (settings.tradition === 'carnatic')) { settings.taal = DEFAULT_TAAL[settings.tradition]; settings.theka = 0; }
+  save(); $('ragaFind').value = ''; fillRagaSelect(); fillTaalSelect(); refreshSa(); refreshRaga(); buildTaalStrip(); applyAudioSettings();
 }
 function fillSelect(sel, items, value) {
   sel.innerHTML = '';
@@ -506,7 +527,7 @@ function refreshRaga() {
   if (r.vadi) lines.push(`vadi ${SWARA_NAMES[r.vadi]} · samvadi ${SWARA_NAMES[r.samvadi]}${r.pakad ? ' · pakad: ' + r.pakad : ''}`);
   else if (r.pakad) lines.push(`phrases: ${r.pakad}`);
   $('ragaInfo').textContent = lines.join('\n');
-  const pats = buildPatterns(r);
+  const pats = buildPatterns(r, settings.tradition);
   fillSelect($('patternSel'), pats.map((p) => ({ value: p.id, label: p.name })), settings.pattern);
   if (!pats.find((p) => p.id === settings.pattern)) { settings.pattern = pats[0].id; $('patternSel').value = settings.pattern; }
   applyAudioSettings();
@@ -563,8 +584,9 @@ function toggleTabla() {
 
 function startDrill() {
   audio();
+  const pat = buildPatterns(raga(), settings.tradition).find((p) => p.id === settings.pattern);
+  if (pat.taal && settings.taal !== pat.taal && TAALS.find((t) => t.id === pat.taal)) { settings.taal = pat.taal; settings.theka = 0; save(); $('taalSel').value = pat.taal; buildTaalStrip(); applyAudioSettings(); }
   if (!tabla.running) toggleTabla();
-  const pat = buildPatterns(raga()).find((p) => p.id === settings.pattern);
   const perNote = Number(settings.perNote) || pat.perNote || 1;
   const noteDur = perNote * tabla.matraDur;
   const t0 = tabla.nextSamTime(1.5);
@@ -617,7 +639,7 @@ async function toggleTestTone() {
   o.connect(lp).connect(g); g.connect(monitor).connect(master);
   tracker.setInput(g);
   o.start(); lfo.start();
-  const seq = buildPatterns(raga())[0].notes;
+  const seq = buildPatterns(raga(), settings.tradition)[0].notes;
   let i = 0;
   const step = () => {
     const n = seq[i % seq.length]; i++;
@@ -808,7 +830,7 @@ function init() {
   fillSelect($('saNote'), NOTE_NAMES.map((n, i) => ({ value: i, label: n })), 0);
   fillSelect($('saOct'), [2, 3, 4, 5].map((o) => ({ value: o, label: `octave ${o}` })), 3);
   fillSelect($('shrutiMode'), Object.entries(SHRUTI_MODES).map(([v, o]) => ({ value: v, label: o.label })), settings.shruti.mode);
-  fillSelect($('taalSel'), TAALS.map((t) => ({ value: t.id, label: t.name })), settings.taal);
+  fillTaalSelect();
   settings.tanpuras.forEach((tp, k) => {
     fillSelect($('tpVoice' + k), Object.entries(VOICES).map(([v, o]) => ({ value: v, label: o.label })), tp.voice);
     fillSelect($('tpString' + k), [{ value: 'auto', label: 'Follow raga' }].concat(Object.entries(FIRST_STRING).map(([v, o]) => ({ value: v, label: `${o.label} – Sa – Sa – Sa` }))), tp.string);

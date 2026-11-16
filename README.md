@@ -44,7 +44,13 @@ tanpura and tabla are not picked up as "your voice".
   mark ±15¢ (in tune) and ±35¢ (close) around each swara line.
 - **Guru report** speaks like a teacher: it knows each raga's vadi, samvadi and pakad, catches swaras that do not belong,
   swaras used against the aroha/avaroha, notes you never visited, and ends with homework built around the pakad.
-- **Taal library**: 22 taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra
+- **Carnatic talas**: Adi (1 and 2 kalai), Rupaka, Misra and Khanda Chapu, the three Ekas, Jhampa, Ata, Matya, Dhruva and
+  Tisra Triputa, plus the remaining talas of the 35-tala scheme, generated from their angas. The strip shows each anga
+  (I₄, O, U) and the kriya on every akshara (clap, count, wave). A synthesised mridangam plays the sollukattu: one stroke
+  per kriya, or sarva laghu in chatusra or tisra nadai.
+- **Varisai drills** in Carnatic mode for any sampurna raga: sarali varisai 1–8, janta varisai 1–4 and the seven alankaras,
+  each in its tala (the drill switches the tala for you), at first, second or third speed.
+- **Taal library**: 22 Hindustani taals with 44 thekas (variations such as filled, vilambit, drut, dholak-style). Bols inside a matra
   can be subdivided (`- Dhin`, `Dha Ge`, `Tirkit`). Pick the theka under the taal.
 - **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays
   the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
@@ -83,12 +89,12 @@ tanpura and tabla are not picked up as "your voice".
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |
 | `js/music.js` | Swara tables (just intonation and equal temperament), token grammar, nearest-swara lookup. |
 | `js/ragas.js`, `js/ragas-hindustani.js`, `js/ragas-carnatic.js` | Raga data: Hindustani list, generated melakartas and janyas. Add your own here. |
-| `js/taals.js` | Theka data. |
+| `js/taals.js` | Hindustani thekas; Carnatic talas built from angas with kriya and sollukattu. |
 | `js/shruti.js` | Shruti petti: reed drone synthesis. |
 | `js/tanpura.js` | 4-string tanpura: synthesised voicings with jawari swell, or recorded strings; pan and fine tune. |
 | `js/tanpura-kit.js` | Loads `samples/tanpura/*.wav`, measures each string's pitch, plays the nearest one shifted to the target. |
 | `js/swarmandal.js` | Raga-tuned swarmandal strum. |
-| `js/tabla.js` | Theka scheduler (layakari, ramp), synthesised dayan/bayan fallback, matra lookup for timing feedback. |
+| `js/tabla.js` | Theka scheduler (layakari, ramp), synthesised tabla fallback and mridangam, matra lookup for timing feedback. |
 | `js/samples.js` | Sampled tabla kit: loads `samples/tabla/*.flac`, maps bols to takes, pitch-shifts to Sa. |
 | `js/guru.js` | Per-swara statistics, live hints, session report. |
 | `js/drill.js` | Alankar pattern generation and note-by-note scoring. |
@@ -109,7 +115,7 @@ Example: `.N R G M D N S'`.
 
 ## Ideas for later
 
-- Carnatic talas (Adi, Rupaka, Chapu, the 35-tala scheme) with angas and a mridangam voice; sarali, janta and dhatu varisai drills.
+- Dhatu varisai and the remaining sarali variants; recorded mridangam strokes if a CC0 set turns up.
 - Gamaka-aware scoring for Carnatic mode: judge the anchor of an oscillation rather than every frame.
 - Lehra (a looping melody over the theka for taal practice).
 - Replay a recording with its pitch trace.

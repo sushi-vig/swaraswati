@@ -19,7 +19,15 @@ const STROKES = {
   '-': [], s: [],
 };
 STROKES.tirakita = STROKES.tirkit; STROKES.trkt = STROKES.tirkit; STROKES.tete = STROKES.tite;
-export const strokesFor = (bol) => STROKES[bol.toLowerCase()] || STROKES.na;
+// Mridangam sollukattu → synthesised strokes (right head tuned to Sa, left head an octave or so below).
+const MRIDANGAM = {
+  tha: H('mtha'), ta: H('mta'), ki: H('mki'), ka: H('mki'), mi: H('mki'), nu: H('mki'), ku: H('mki'),
+  dhi: H('mdhi'), di: H('mdhi'), dheem: H('mdhi'), dhin: H('mdhi', 'mthom'), nam: H('mnam'), num: H('mnam'),
+  thom: H('mthom'), tom: H('mthom'), jo: H('mthom'), gu: H('mthom'), tham: H('mnam', 'mthom'), dhim: H('mdhi', 'mthom'),
+  tari: [{ at: 0, hits: ['mta'] }, { at: 0.5, hits: ['mki'] }], kita: [{ at: 0, hits: ['mki'] }, { at: 0.5, hits: ['mta'] }],
+  '-': [], s: [],
+};
+export const strokesFor = (bol, instrument = 'tabla') => (instrument === 'mridangam' ? (MRIDANGAM[bol.toLowerCase()] || MRIDANGAM.tha) : (STROKES[bol.toLowerCase()] || STROKES.na));
 
 export class Tabla {
   constructor(ctx, dest) {
@@ -39,6 +47,7 @@ export class Tabla {
     this.kitPromise = this.kit.load().then((ok) => { if (this.onKit) this.onKit(ok, this.kit.failed); return ok; });
   }
   get usingSamples() { return this.engine === 'samples' && this.kit.ready; }
+  get instrument() { return this.taal.tradition === 'carnatic' ? 'mridangam' : 'tabla'; }
   _noiseBuffer() {
     const b = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
     const d = b.getChannelData(0);
@@ -53,7 +62,7 @@ export class Tabla {
   setTaal(taal, thekaIdx = 0) {
     const changed = taal !== this.taal;
     this.taal = taal; this.meta = matraMeta(taal); this.theka = thekaOf(taal, thekaIdx);
-    if (this.running && changed) this.nextIdx = 0;
+    if (this.running && changed) { this.nextIdx = 0; this.events = this.events.filter((e) => e.matra < taal.matras); }
   }
   setVolume(v) { this.out.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05); }
   get matraDur() { return 60 / this.bpm; }
@@ -119,7 +128,7 @@ export class Tabla {
     const d = this.layakari, bols = this.theka.bols, n = bols.length, sub = this.matraDur / d;
     for (let j = 0; j < d; j++) {
       const k = (m * d + j) % n, meta = this.meta[k];
-      const base = k === 0 ? 1.0 : meta.startsVibhag ? 0.9 : 0.78;
+      const base = k === 0 ? 1.0 : meta.kriya === 'clap' || (!meta.kriya && meta.startsVibhag) ? 0.9 : meta.kriya === 'wave' ? 0.84 : 0.78;
       const vel = 0.78 + (base - 0.78) * this.accent;
       this._playBols(bols[k], t + j * sub, sub, vel * (j === 0 ? 1 : 0.92));
     }
@@ -128,7 +137,7 @@ export class Tabla {
   _playBols(str, t, dur, vel) {
     const toks = str.split(/\s+/).filter(Boolean), slot = dur / toks.length;
     toks.forEach((bol, i) => {
-      for (const s of strokesFor(bol)) for (const h of s.hits) this[h](t + i * slot + s.at * slot, vel, slot);
+      for (const s of strokesFor(bol, this.instrument)) for (const h of s.hits) this[h](t + i * slot + s.at * slot, vel, slot);
     });
   }
 
@@ -191,5 +200,38 @@ export class Tabla {
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.9 * v, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
     o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.6);
     this._noise(t, 0.03, 'lowpass', 250, 0.7, 0.5 * v);
+  }
+
+  // --- mridangam (synthesised; no recordings in the kit) ---
+  mnam(t, v, slot) {       // "nam": open ring on the right head, strong octave harmonic at Sa
+    this._noise(t, 0.015, 'highpass', 3500, 0.7, 0.14 * v);
+    this._partials(t, this.dayan, [[1, 0.55, 0.9], [2, 0.6, 0.8], [3, 0.18, 0.4], [4.2, 0.08, 0.2]], 0.5 * v);
+  }
+  mdhi(t, v, slot) {       // "dhi / dheem": fuller ring, longer
+    this._noise(t, 0.012, 'highpass', 2500, 0.7, 0.1 * v);
+    this._partials(t, this.dayan, [[1, 0.85, 1.2], [2, 0.35, 0.9], [3, 0.12, 0.35]], 0.5 * v);
+  }
+  mtha(t, v, slot) {       // "tha": sharp slap on the right head, dry
+    this._noise(t, 0.035, 'bandpass', 2600, 1.1, 0.8 * v);
+    this._partials(t, this.dayan, [[2, 0.3, 0.1], [3, 0.25, 0.08], [1, 0.1, 0.06]], 0.9 * v);
+  }
+  mta(t, v, slot) {        // "ta": closed rim tap, high and short
+    this._noise(t, 0.025, 'highpass', 4200, 0.8, 0.55 * v);
+    this._partials(t, this.dayan, [[3, 0.2, 0.07], [5, 0.1, 0.05]], 0.8 * v);
+  }
+  mki(t, v, slot) {        // "ki / ka / mi / nu": soft closed stroke
+    this._noise(t, 0.03, 'lowpass', 1600, 0.8, 0.45 * v);
+    this._partials(t, this.dayan, [[1, 0.12, 0.05]], 0.8 * v);
+  }
+  mthom(t, v, slot) {      // "thom / jo": open left head with the rising gumki
+    const ctx = this.ctx, b = this.bayan * 1.15;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(b * 0.85, t);
+    o.frequency.linearRampToValueAtTime(b * 1.25, t + 0.28);
+    o.frequency.linearRampToValueAtTime(b * 1.1, t + 0.7);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.95 * v, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+    o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.85);
+    this._noise(t, 0.04, 'lowpass', 300, 0.7, 0.5 * v);
   }
 }

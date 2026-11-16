@@ -73,8 +73,11 @@ tanpura and tabla are not picked up as "your voice".
   and available as a second checkbox. The Mic panel shows how many dB of bleed are being removed. A level meter shows what
   the detector receives against the noise floor it must clear. Add `?bleed=0.5` to the address and press Test tone to
   simulate a speaker-to-mic path for checking. The app knows when every drum stroke fires and how
-  long each one rings: a stroke's attack is masked, and while it rings any frame whose pitch matches that drum head is
-  masked too (drawn faint, never scored), while the voice on another swara is still heard.
+  long each one rings: a stroke's attack is masked, and while it rings a frame whose pitch jumped onto that drum head is
+  masked too (drawn faint, never scored). A voice that was already on that pitch before the stroke (Sa over a dayan tuned
+  to Sa) is kept, and when a stroke's residual briefly spoils the detector the last clear pitch is held for up to 0.4 s,
+  drawn faint and dimmed on the big display, so the voice does not vanish at every beat. Over Bluetooth the canceller's
+  reference is delayed by the reported output latency so the echo stays within the filter's reach.
 - **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
 - **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.

@@ -46,7 +46,17 @@ export class PitchTracker {
   }
 
   // The app's output, so the canceller can subtract what the speakers play from the mic.
-  setReference(node) { if (this.reference) { try { this.reference.disconnect(this.node, 0, 1); } catch (_) { /* not connected */ } } this.reference = node; if (node) node.connect(this.node, 0, 1); }
+  setReference(node) {
+    if (!this.refDelay) { this.refDelay = this.ctx.createDelay(1); this.refDelay.delayTime.value = 0; this.refDelaySec = 0; this.refDelay.connect(this.node, 0, 1); }
+    if (this.reference) { try { this.reference.disconnect(this.refDelay); } catch (_) { /* not connected */ } }
+    this.reference = node; if (node) node.connect(this.refDelay);
+  }
+  // Shift the reference later by `sec` (output latency over Bluetooth, say) so the echo falls inside the filter's reach.
+  setReferenceDelay(sec) {
+    const v = Math.min(0.9, Math.max(0, sec || 0));
+    if (!this.refDelay || Math.abs(v - this.refDelaySec) < 0.005) return;
+    this.refDelaySec = v; this.refDelay.delayTime.setTargetAtTime(v, this.ctx.currentTime, 0.05); this.resetAec();
+  }
   setAec(on) { this.node.port.postMessage({ aec: !!on }); }
   tuneAec(opts) { this.node.port.postMessage(opts); }
   resetAec() { this.node.port.postMessage({ reset: true }); }

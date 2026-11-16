@@ -91,7 +91,10 @@ async function ensureTracker() {
     tracker.onFrame = onFrame;
     tracker.setSensitivity(settings.sensitivity);
     tracker.setReference(master); tracker.setAec(settings.aec);
-    tracker.onStats = (d) => { aecStats = d; };
+    // The canceller's filter reaches 128 ms. Over Bluetooth the sound leaves the speaker 150-250 ms after the app
+    // produced it, so the reference is delayed by the reported output latency (less a margin) to stay in reach.
+    tracker.setReferenceDelay(Math.max(0, (ctx.outputLatency || 0) - 0.03));
+    tracker.onStats = (d) => { aecStats = d; tracker.setReferenceDelay(Math.max(0, (ctx.outputLatency || 0) - 0.03)); };
   }
   return tracker;
 }
@@ -141,23 +144,41 @@ function pushHist(t, c, d, masked = 0) { hT[hHead] = t; hC[hHead] = c; hD[hHead]
 
 const onsets = [];        // { t, offsetMs|null }
 const med = [];
-let lastVoicedT = -1, lastCents = NaN, current = null, detectSa = null, maskedFrames = 0;
+let lastVoicedT = -1, lastCents = NaN, current = null, detectSa = null, maskedFrames = 0, heldFrames = 0;
+let lastClearT = -1, lastClearC = NaN; // last frame that was neither masked nor held: the voice we are sure of
+const HOLD_SEC = 0.4;                   // how long a stroke may hide the voice before the display lets go of it
 // Does f0 sit within 60 cents of hz, or of its octave above or below (a ringing head is often read an octave off)?
 const pitchLike = (f0, hz) => [0.5, 1, 2].some((m) => Math.abs(1200 * Math.log2(f0 / (hz * m))) < 60);
 
 function onFrame(fr) {
   lastFrame = fr;
   const t = fr.t;
+  // A drum stroke sounding now (null when none). Its attack (first 80 ms) is masked outright. While it rings, a frame
+  // is masked only if its pitch matches the drum head AND the voice was not already there: the dayan is tuned to Sa,
+  // and a singer holding Sa through a theka must not be hidden for every stroke. A reading that jumps onto the drum
+  // pitch at the stroke is the drum; one that was on that pitch before the stroke is the voice.
+  const st = (micOn || testTone) && tabla ? tabla.strokeAt(t, (ctx.outputLatency || settings.latencyMs / 1000) + 0.005) : null;
+  const recent = lastClearT >= 0 && t - lastClearT < HOLD_SEC;
+  // Bridge a short hole the stroke made: draw the last clear pitch faint, keep the big display and the guru's note
+  // alive, score nothing. Masked frames and clarity dropouts under a stroke both go through here.
+  const hold = () => {
+    heldFrames++; pushHist(t, lastClearC, 0, 1); guru.hold(t); lastVoicedT = t;
+    if (current) { current.t = t; current.held = true; }
+  };
   if (fr.f0 > 0) {
     const raw = 1200 * Math.log2(fr.f0 / saHz());
     med.push(raw); if (med.length > 3) med.shift();
     const sorted = med.slice().sort((a, b) => a - b);
     const c = sorted[sorted.length >> 1];
-    // A drum stroke is sounding. Its attack (first 80 ms) is masked outright; while it rings, a frame is masked only
-    // if its pitch matches the drum head, so the voice on another swara is still heard. Masked frames are drawn
-    // faint and never start a note, move the hint, or get scored.
-    const st = (micOn || testTone) && tabla ? tabla.strokeAt(t, (ctx.outputLatency || settings.latencyMs / 1000) + 0.005) : null;
-    if (st && (st.since < 0.08 || (st.hz && pitchLike(fr.f0, st.hz)))) { maskedFrames++; pushHist(t, c, 0, 1); guru.hold(t); lastVoicedT = t; return; }
+    if (st) {
+      const continuous = recent && Math.abs(c - lastClearC) < 60;
+      const drumLike = st.hz && pitchLike(fr.f0, st.hz) && !continuous;
+      if (st.since < 0.08 || drumLike) {
+        maskedFrames++;
+        if (recent) hold(); else { pushHist(t, c, 0, 1); guru.hold(t); lastVoicedT = t; }
+        return;
+      }
+    }
     const gap = lastVoicedT < 0 ? 1 : t - lastVoicedT;
     if (gap > 0.12) gamaka.cut();
     // Gamaka-aware: when the note is oscillating on purpose, score the pitch the swing is anchored on.
@@ -168,11 +189,14 @@ function onFrame(fr) {
     const inRaga = !ragaSet || ragaSet.has(info.sw);
     pushHist(t, c, rInfo.dev);
     if (gap > 0.12 || Math.abs(c - lastCents) > (gam ? gam.span + 70 : 70)) registerOnset(t);
-    lastVoicedT = t; lastCents = c;
-    current = { t, cents: c, scored: sc, gam, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity };
+    lastVoicedT = t; lastCents = c; lastClearT = t; lastClearC = c;
+    current = { t, cents: c, scored: sc, gam, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity, held: false };
     guru.addFrame(t, info, rInfo, inRaga, ragaCtx, gam);
     drill.addFrame(t, sc, info);
     if (detectSa) detectSa.push(fr.f0);
+  } else if (st && recent && fr.rms > 0) {
+    // unvoiced only because the stroke's residual spoiled the clarity: hold the voice through it
+    hold();
   } else {
     med.length = 0; gamaka.cut();
     pushHist(t, NaN, 0);
@@ -344,8 +368,9 @@ function draw() {
   // current pitch marker
   if (current && now - current.t < 0.3) {
     const y = yOf(current.cents);
-    g.fillStyle = devColor(current.rInfo.dev);
-    g.beginPath(); g.arc(cw - 6, y, 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = devColor(current.rInfo.dev); g.strokeStyle = g.fillStyle; g.lineWidth = 2;
+    g.beginPath(); g.arc(cw - 6, y, current.held ? 4 : 5, 0, Math.PI * 2);
+    if (current.held) g.stroke(); else g.fill();
   }
 }
 
@@ -369,7 +394,7 @@ function updateNow() {
     const { info, rInfo, inRaga, hz, gam } = current;
     $('swaraBig').textContent = SWARA_NAMES[info.sw] + (gam ? '~' : '');
     $('swaraOct').textContent = OCT_NAMES[String(info.oct)] || '';
-    $('swaraBig').style.color = inRaga ? '' : 'var(--bad)';
+    $('swaraBig').style.color = inRaga ? '' : 'var(--bad)'; $('swaraBig').style.opacity = current.held ? 0.55 : '';
     const gtxt = gam ? ` · ${settings.tradition === 'carnatic' ? 'kampita' : 'andolan'} swinging ${Math.round(gam.span)}¢${gam.rate ? ' at ' + gam.rate.toFixed(1) + '/s' : ''}${gam.anchored ? '' : ', no clear anchor'}` : '';
     $('swaraSub').textContent = (inRaga ? `${SWARA_LONG[info.sw]}${ragaSet ? ' · in ' + raga().name : ''}` : `${SWARA_LONG[info.sw]} — not in ${raga().name} (nearest: ${SWARA_LONG[rInfo.sw]})`) + gtxt;
     const d = Math.max(-50, Math.min(50, info.dev));
@@ -379,7 +404,7 @@ function updateNow() {
     $('hzText').textContent = `${hz.toFixed(1)} Hz`;
     $('westernText').textContent = noteName(hzToMidi(hz));
   } else {
-    $('swaraBig').textContent = '—'; $('swaraOct').textContent = ''; $('swaraBig').style.color = '';
+    $('swaraBig').textContent = '—'; $('swaraOct').textContent = ''; $('swaraBig').style.color = ''; $('swaraBig').style.opacity = '';
     $('hzText').textContent = ''; $('westernText').textContent = '';
     if (!detectSa) $('swaraSub').textContent = micOn ? 'Listening…' : testTone ? 'Test tone running' : 'Start the mic, pick your Sa, and sing.';
   }
@@ -994,4 +1019,4 @@ init();
 
 // Debug hook (harmless in production): inspect live state from the console.
 window.swaraswatiTune = (opts) => { if (tracker) tracker.tuneAec(opts); return opts; };
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, aec: aecStats, aecOn: settings.aec, toneCents: testTone ? Math.round(testTone.curCents) : null, trackerRate: tracker ? tracker.rate : null, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, heldFrames, refDelay: tracker ? tracker.refDelaySec : null, aec: aecStats, aecOn: settings.aec, toneCents: testTone ? Math.round(testTone.curCents) : null, trackerRate: tracker ? tracker.rate : null, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

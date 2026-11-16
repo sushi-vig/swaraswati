@@ -56,6 +56,10 @@
 
     <div class="panel">
       <h3>Sa &amp; Raga</h3>
+      <div class="row tight">
+        <label>Tradition</label>
+        <select id="traditionSel"><option value="hindustani">Hindustani</option><option value="carnatic">Carnatic</option></select>
+      </div>
       <div class="row">
         <label>Sa (tonic)</label>
         <select id="saNote"></select>
@@ -71,6 +75,10 @@
       <div class="row">
         <label>Raga</label>
         <select id="ragaSel"></select>
+      </div>
+      <div class="row tight">
+        <label>Find</label>
+        <input type="text" id="ragaFind" class="grow" placeholder="type a name, thaat or melakarta number; Enter picks the first" autocomplete="off">
       </div>
       <div class="row tight info mono" id="ragaInfo"></div>
       <div class="row">
@@ -118,6 +126,15 @@
       </div>
       <div class="info">D toggles tanpura A. Run both, panned apart, for a fuller drone. The recorded voices use CC0 single-string recordings in <code>samples/tanpura/</code>; Jawari acts as a tone control for them.</div>
       <div class="info" id="tpKitInfo"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Shruti petti <button id="btnShruti" class="small right" title="Sruti box (P)">Off</button></h3>
+      <div class="row tight"><label>Notes</label><select id="shrutiMode"></select></div>
+      <div class="row tight"><label>Volume</label><input type="range" id="shrutiVol" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="row tight"><label>Tone</label><input type="range" id="shrutiTone" min="0" max="1" step="0.05" class="grow"></div>
+      <div class="row tight"><label>Fine</label><input type="range" id="shrutiFine" min="-30" max="30" step="1" class="grow"><span class="info mono" id="shrutiFineText">0 ¢</span></div>
+      <div class="info">A continuous reed drone, the sruti box Carnatic singers practise with. Runs alongside or instead of the tanpuras; follows Sa and the fine tune.</div>
     </div>
 
     <div class="panel">

@@ -1,6 +1,6 @@
 // The "guru": watches every pitch frame, tracks held notes per swara, gives live hints and a session report
 // written the way a teacher would speak, not as a table of numbers.
-import { SWARA_LONG, SWARA_NAMES, SWARA_ORDER, swaraLabel } from './music.js';
+import { SWARA_LONG, SWARA_NAMES, SWARA_ORDER, swaraLabel, NAMING } from './music.js';
 
 const avg = (a) => a.reduce((s, v) => s + v, 0) / (a.length || 1);
 const std = (a) => { const m = avg(a); return Math.sqrt(avg(a.map((v) => (v - m) * (v - m)))); };
@@ -124,7 +124,7 @@ export class Guru {
       let s = `Your ${long} leans ${dirn}, ${amount(c)} (around ${c} cents ${r.dev > 0 ? 'above' : 'below'}), and it did so over ${r.holds} held notes, so it is a habit rather than an accident.`;
       if (raga && r.sw === raga.vadi) s += ` ${SWARA_NAMES[r.sw]} is the vadi of ${rn}, the note the whole raga leans on. Until ${SWARA_NAMES[r.sw]} is sure, it will not sound like ${rn}.`;
       else if (raga && r.sw === raga.samvadi) s += ` ${SWARA_NAMES[r.sw]} is the samvadi, the partner of ${SWARA_NAMES[raga.vadi]}; sing the two against each other and the ear will find it.`;
-      else if (KOMAL.has(r.sw) && r.dev > 0) s += ` Komal swaras are easy to push up. Think of ${SWARA_NAMES[r.sw]} as sitting a little lower than you expect, and let it rest there.`;
+      else if (KOMAL.has(r.sw) && r.dev > 0) s += ` ${NAMING === 'carnatic' ? 'The lower Ri, Ga, Da and Ni' : 'Komal swaras'} are easy to push up. Think of ${SWARA_NAMES[r.sw]} as sitting a little lower than you expect, and let it rest there.`;
       else if (r.sw === 'P' || r.sw === 'S') s += ` ${SWARA_NAMES[r.sw]} is in the tanpura; listen for the string and match it rather than aiming from the previous note.`;
       else s += r.dev > 0 ? ' Ease it down from the breath, not by pinching the throat.' : ' Lift it with more breath behind it; a flat note is usually an under-supported note.';
       say(c > 35 ? 'bad' : 'warn', s);
@@ -177,8 +177,8 @@ export class Guru {
     const worst = off[0];
     if (surState === 'poor') say('', 'Homework: nothing but Sa, Pa and Sa\' with the tanpura, one minute each, eyes on the line. The raga can wait a day.');
     else if (worst && Math.abs(worst.dev) > 20) say('', `Homework: hold ${SWARA_LONG[worst.sw]} against the tanpura for eight slow counts, ten times, ${worst.dev > 0 ? 'easing it down' : 'lifting it'} until the trace sits on the line. Then sing ${SWARA_NAMES[worst.sw]} inside the phrase ${raga && raga.pakad ? raga.pakad : 'of the aroha'}.`);
-    else if (strayed && raga && raga.pakad) say('', `Homework: the pakad, slowly, ten times: ${raga.pakad}. Say the swara names aloud first, then sing them. That is how the raga's shape gets into the ear.`);
-    else if (raga && raga.pakad) say('', `Hold on to the pakad: ${raga.pakad}. Begin and end every sitting with it, and let ${SWARA_LONG[raga.vadi]} ring a little longer than the rest.`);
+    else if (strayed && raga && raga.pakad) say('', `Homework: the ${raga.tradition === 'carnatic' ? 'characteristic phrase' : 'pakad'}, slowly, ten times: ${raga.pakad}. Say the swara names aloud first, then sing them. That is how the raga's shape gets into the ear.`);
+    else if (raga && raga.pakad) say('', `Hold on to the ${raga.tradition === 'carnatic' ? 'characteristic phrase' : 'pakad'}: ${raga.pakad}. Begin and end every sitting with it, ${raga.vadi ? ` and let ${SWARA_LONG[raga.vadi]} ring a little longer than the rest` : ''}.`);
     else if (!rn) say('', 'Pick a raga next time and I can tell you about more than the sur.');
     return L;
   }

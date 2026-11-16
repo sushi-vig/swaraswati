@@ -29,7 +29,7 @@ button.primary { background: var(--maroon); color: var(--paper2); border-color: 
 button.on { background: #e4ecdf; border-color: var(--good); color: var(--good); box-shadow: inset 0 0 0 1px #e4ecdf, inset 0 0 0 2px #b9cfb4; }
 button.small { padding: 4px 9px; font-size: 11px; }
 button:disabled { opacity: .5; cursor: default; }
-select, input[type=number] { background: var(--paper2); color: var(--ink); border: 1px solid var(--rule2); border-radius: 3px; padding: 5px 7px; font: 15px var(--serif); }
+select, input[type=number], input[type=text] { background: var(--paper2); color: var(--ink); border: 1px solid var(--rule2); border-radius: 3px; padding: 5px 7px; font: 15px var(--serif); }
 input[type=range] { width: 100%; accent-color: var(--maroon); }
 label { color: var(--muted); font-size: 14px; font-style: italic; }
 
@@ -149,3 +149,6 @@ input[type=text] { background: var(--paper2); color: var(--ink); border: 1px sol
 .recs li audio { grid-column: 1 / -1; width: 100%; height: 32px; }
 .recs li a { color: var(--maroon); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; text-decoration: none; }
 button.rec { background: #f3dcd6; border-color: var(--bad); color: var(--bad); }
+
+optgroup { font-family: var(--display); font-style: normal; font-weight: 700; color: var(--maroon); letter-spacing: .5px; }
+optgroup option { font-family: var(--serif); color: var(--ink); font-weight: 400; }

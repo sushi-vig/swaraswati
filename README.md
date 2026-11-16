@@ -1,8 +1,9 @@
 # Swaraswati
 
-A browser-based practice companion for Hindustani classical vocal riyaz: a shruti (pitch) monitor,
-two synthesised tanpuras and a swarmandal, a tabla with real stroke recordings and 22 taals with theka variations, sargam drills, and a "guru" panel
-that tells you which swaras drift, by how much, and when you stray outside the raga.
+A browser-based practice companion for Indian classical vocal riyaz, Hindustani and Carnatic: a shruti (pitch) monitor,
+two tanpuras, a shruti petti and a swarmandal, a tabla with real stroke recordings and 22 taals with theka variations, sargam drills,
+a raga library of 77 Hindustani ragas, all 72 melakartas and 78 janya ragas, and a "guru" panel that tells you which swaras drift,
+by how much, and when you stray outside the raga.
 
 No build step, no dependencies. Everything is vanilla JS + Web Audio + Canvas.
 
@@ -47,7 +48,15 @@ tanpura and tabla are not picked up as "your voice".
   can be subdivided (`- Dhin`, `Dha Ge`, `Tirkit`). Pick the theka under the taal.
 - **Laya**: 20 to 400 bpm with the laya name (vilambit, madhya, drut), tap tempo, layakari (ekgun / dugun / chaugun plays
   the theka at 1×, 2× or 4× density inside the same avartan), and a tempo ramp of +N bpm per avartan up to a cap.
-- **Fine-tune Sa** in cents; the tanpura and tabla follow.
+- **Tradition switch.** Carnatic mode names the swaras the Carnatic way, sixteen names over twelve pitches, resolved per raga:
+  the same pitch reads Ri3 in Nata and Ga2 in Kharaharapriya, Ga1 in Varali and Ri2 in Mohanam. The big display, the trace,
+  the drill and the guru report all follow. Sa is shown in kattai (and as a harmonium key) alongside Hz.
+- **Raga library**: 77 Hindustani ragas grouped by thaat with vadi, samvadi, pakad and teacher's notes; all 72 melakartas
+  generated from the scheme with chakra and notes for the common ones; 78 janya ragas with arohana, avarohana, parent mela,
+  vakra and bhashanga remarks and characteristic phrases. The Find box searches both traditions by name, thaat or mela number.
+- **Shruti petti** (`P`): a continuous reed drone, Sa · Pa · lower Sa (or Ma, or upper Sa, or Sa alone), with volume, tone and
+  fine tune. Runs alongside or instead of the tanpuras.
+- **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
 - **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.
 - **Swarmandal** tuned to the raga's swaras over one to three octaves. Strum with the button or `S`; auto-strum on the sam
@@ -73,7 +82,9 @@ tanpura and tabla are not picked up as "your voice".
 | `js/pitch-worker.js` | Web Worker running the McLeod Pitch Method (NSDF) with an adaptive noise-floor gate. Window 2048, hop 1024, m(τ) via cumulative sums, no per-frame allocation. |
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |
 | `js/music.js` | Swara tables (just intonation and equal temperament), token grammar, nearest-swara lookup. |
-| `js/ragas.js` / `js/taals.js` | Raga and theka data. Add your own here. |
+| `js/ragas.js`, `js/ragas-hindustani.js`, `js/ragas-carnatic.js` | Raga data: Hindustani list, generated melakartas and janyas. Add your own here. |
+| `js/taals.js` | Theka data. |
+| `js/shruti.js` | Shruti petti: reed drone synthesis. |
 | `js/tanpura.js` | 4-string tanpura: synthesised voicings with jawari swell, or recorded strings; pan and fine tune. |
 | `js/tanpura-kit.js` | Loads `samples/tanpura/*.wav`, measures each string's pitch, plays the nearest one shifted to the target. |
 | `js/swarmandal.js` | Raga-tuned swarmandal strum. |
@@ -98,6 +109,8 @@ Example: `.N R G M D N S'`.
 
 ## Ideas for later
 
+- Carnatic talas (Adi, Rupaka, Chapu, the 35-tala scheme) with angas and a mridangam voice; sarali, janta and dhatu varisai drills.
+- Gamaka-aware scoring for Carnatic mode: judge the anchor of an oscillation rather than every frame.
 - Lehra (a looping melody over the theka for taal practice).
 - Replay a recording with its pitch trace.
 - Per-raga pakad / chalan drills and meend detection.

@@ -27,6 +27,9 @@ const MRIDANGAM = {
   tari: [{ at: 0, hits: ['mta'] }, { at: 0.5, hits: ['mki'] }], kita: [{ at: 0, hits: ['mki'] }, { at: 0.5, hits: ['mta'] }],
   '-': [], s: [],
 };
+// How long each stroke keeps ringing loud enough to fool a pitch detector, and which head it rings on.
+const RING = { na: 0.35, tin: 0.35, tun: 0.7, te: 0.07, ke: 0.07, kat: 0.12, ge: 0.35, mnam: 0.5, mdhi: 0.7, mtha: 0.08, mta: 0.06, mki: 0.05, mthom: 0.45 };
+const DAYAN_HITS = new Set(['na', 'tin', 'tun', 'mnam', 'mdhi']), BAYAN_HITS = new Set(['ge', 'kat', 'mthom']);
 export const strokesFor = (bol, instrument = 'tabla') => (instrument === 'mridangam' ? (MRIDANGAM[bol.toLowerCase()] || MRIDANGAM.tha) : (STROKES[bol.toLowerCase()] || STROKES.na));
 
 export class Tabla {
@@ -42,17 +45,23 @@ export class Tabla {
     this.onTempo = null;        // callback(bpm) when the ramp changes the tempo
     this.accent = 1;            // 0..1 how strongly sam/tali are accented
     this.engine = 'samples';    // 'samples' (recorded strokes) or 'synth'
-    this.strokeTimes = [];      // when each stroke fires (ctx time), so the pitch tracker can ignore the thud
+    this.strokeTimes = [];      // recent strokes { t, hz, ring }: when it fires, the pitch it rings at (null = noise), how long it rings
     this.kit = new SampleKit(ctx, this.out);
     this.kit.setSa(this.dayan);
     this.kitPromise = this.kit.load().then((ok) => { if (this.onKit) this.onKit(ok, this.kit.failed); return ok; });
   }
   get usingSamples() { return this.engine === 'samples' && this.kit.ready; }
-  // Is a stroke sounding around time t? `lat` = output and room delay in seconds. Window: 20 ms before to 80 ms after the hit.
-  strokeNear(t, lat = 0.04) {
-    if (!this.running) return false;
-    for (let i = this.strokeTimes.length - 1; i >= 0; i--) { const d = t - (this.strokeTimes[i] + lat); if (d > 0.5) break; if (d >= -0.02 && d <= 0.08) return true; }
-    return false;
+  // The stroke sounding around time t, or null. `lat` = output and room delay in seconds.
+  // Returns { since (s after the hit), hz (ring pitch or null), ring (s) } for the most recent stroke still ringing.
+  strokeAt(t, lat = 0.04) {
+    if (!this.running) return null;
+    let best = null;
+    for (let i = this.strokeTimes.length - 1; i >= 0; i--) {
+      const s = this.strokeTimes[i], d = t - (s.t + lat);
+      if (d > 1.0) break;
+      if (d >= -0.02 && d <= s.ring && (!best || d < best.since)) best = { since: d, hz: s.hz, ring: s.ring };
+    }
+    return best;
   }
   get instrument() { return this.taal.tradition === 'carnatic' ? 'mridangam' : 'tabla'; }
   _noiseBuffer() {
@@ -146,8 +155,11 @@ export class Tabla {
     toks.forEach((bol, i) => {
       for (const s of strokesFor(bol, this.instrument)) {
         const at = t + i * slot + s.at * slot;
-        if (s.hits.length) { this.strokeTimes.push(at); if (this.strokeTimes.length > 128) this.strokeTimes.splice(0, 64); }
-        for (const h of s.hits) this[h](at, vel, slot);
+        for (const h of s.hits) {
+          const ring = RING[h] || 0.1, hz = DAYAN_HITS.has(h) ? this.dayan : BAYAN_HITS.has(h) ? this.bayan : null;
+          this.strokeTimes.push({ t: at, hz, ring }); if (this.strokeTimes.length > 128) this.strokeTimes.splice(0, 64);
+          this[h](at, vel, slot);
+        }
       }
     });
   }

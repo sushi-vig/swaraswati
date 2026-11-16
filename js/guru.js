@@ -56,6 +56,9 @@ export class Guru {
     this._updateHint(t, rctx);
   }
 
+  // A drum stroke is masking the mic: keep the current note alive without claiming any pitch for it.
+  hold(t) { if (this.run && t - this.run.tEnd < 0.6) this.run.tEnd = t; }
+
   addSilence(t) {
     this.frames++;
     if (this.run && t - this.run.tEnd > 0.15) this._finishRun();

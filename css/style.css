@@ -8,11 +8,15 @@
   --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; color: var(--ink); font: 16px/1.45 var(--serif);
+html, body { margin: 0; color: var(--ink); font: 16px/1.45 var(--serif);
   background: var(--paper) radial-gradient(ellipse at 50% -20%, #fbf4e3 0%, var(--paper) 55%, #e6d8ba 100%) fixed; }
+/* App shell: the page itself never scrolls on a desktop. The stage (swara, trace, taal) fits the viewport and the
+   controls column scrolls on its own, so the trace is always fully on screen whatever the zoom. */
+html { height: 100%; }
+body { height: 100%; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 
 header { display: flex; align-items: center; gap: 16px; padding: 12px 22px 10px; background: var(--paper2);
-  border-bottom: 3px double var(--rule2); position: sticky; top: 0; z-index: 5; }
+  border-bottom: 3px double var(--rule2); flex: none; z-index: 5; }
 .brand { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: .5px; line-height: 1; color: var(--maroon); }
 .brand span { font-family: var(--serif); font-weight: 400; color: var(--muted); font-size: 14px; margin-left: 12px; letter-spacing: .4px; }
 .brand span.dev { font-family: "Noto Serif Devanagari", var(--serif); font-size: 18px; color: var(--gold); margin-left: 10px; }
@@ -29,15 +33,23 @@ select, input[type=number] { background: var(--paper2); color: var(--ink); borde
 input[type=range] { width: 100%; accent-color: var(--maroon); }
 label { color: var(--muted); font-size: 14px; font-style: italic; }
 
-main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; padding: 16px 22px 28px; min-height: calc(100vh - 60px); }
-@media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 12px; } }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 370px; grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 14px 22px 14px; }
+.controls { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: var(--rule2) transparent; }
+@media (max-width: 960px) {
+  /* Single column: the page scrolls, but the stage still takes exactly one screen so the trace never needs scrolling. */
+  body { overflow: auto; display: block; height: auto; }
+  main { display: flex; flex-direction: column; padding: 12px; gap: 12px; }
+  .stage { height: calc(100vh - 80px); height: calc(100dvh - 80px); flex: none; }
+  .controls { overflow: visible; }
+}
 
 /* framed card: thin rule with an inner hairline, like an old title page */
 .panel, .now, .vibhag { background: var(--paper2); border: 1px solid var(--rule2); border-radius: 2px;
   box-shadow: inset 0 0 0 3px var(--paper2), inset 0 0 0 4px var(--rule); }
 
-.stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.trace { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+.now, .taal, .taal-fb { flex: none; }
+.trace { position: relative; min-height: 0; flex: 1 1 0; display: flex; flex-direction: column; }
 .zoom { position: absolute; right: 10px; top: 8px; display: flex; gap: 4px; align-items: center;
   background: rgba(250,245,233,0.85); border: 1px solid var(--rule2); border-radius: 3px; padding: 2px 4px; }
 .zoom button.small { padding: 1px 8px; font-size: 14px; line-height: 18px; font-family: var(--serif); letter-spacing: 0; text-transform: none; }
@@ -55,12 +67,13 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 .hint { grid-column: 1 / -1; min-height: 24px; font-size: 16px; padding-top: 6px; font-style: italic; border-top: 1px solid var(--rule); margin-top: 6px; }
 .hint.good { color: var(--good); } .hint.warn { color: var(--warn); } .hint.bad { color: var(--bad); }
 
-#pitchCanvas { width: 100%; flex: 1; min-height: 320px; border: 1px solid var(--rule2); border-radius: 2px; background: #f6eedb; display: block;
+#pitchCanvas { width: 100%; flex: 1 1 0; min-height: 160px; height: 0; border: 1px solid var(--rule2); border-radius: 2px; background: #f6eedb; display: block;
   box-shadow: inset 0 0 0 3px #f6eedb, inset 0 0 0 4px var(--rule); }
 
-.taal { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
-.vibhag { display: flex; gap: 2px; padding: 7px; }
-.matra { min-width: 48px; text-align: center; padding: 4px 4px 3px; border-radius: 2px; font-family: var(--display); font-size: 15px; font-weight: 600; line-height: 1.2; }
+/* One row always: vibhags and matras share the width so the strip never steals a second line from the trace. */
+.taal { display: flex; gap: 8px; flex-wrap: nowrap; align-items: stretch; }
+.vibhag { display: flex; gap: 2px; padding: 6px; flex: 1 1 0; min-width: 0; }
+.matra { flex: 1 1 0; min-width: 0; text-align: center; padding: 4px 2px 3px; border-radius: 2px; font-family: var(--display); font-size: 15px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .matra .mark { display: block; color: var(--maroon); font-family: var(--serif); font-size: 10px; font-weight: 700; height: 12px; letter-spacing: 1px; }
 .matra .num { display: block; color: var(--muted); font-family: var(--serif); font-size: 10px; margin-top: 2px; font-weight: 400; }
 .matra.on { background: var(--maroon); color: var(--paper2); }
@@ -70,6 +83,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 .taal-fb { color: var(--muted); font-size: 13.5px; padding: 0 4px; min-height: 18px; font-style: italic; }
 
 .controls { display: flex; flex-direction: column; gap: 12px; }
+.controls > :last-child { margin-bottom: 4px; }
 .panel { padding: 14px 18px 12px; }
 .panel h3 { margin: 0 0 10px; font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: var(--maroon);
   display: flex; align-items: center; gap: 10px; }
@@ -97,7 +111,20 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; pa
 .report li.good { color: var(--good); } .report li.warn { color: var(--warn); } .report li.bad { color: var(--bad); }
 .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
 kbd { background: var(--paper3); border: 1px solid var(--rule2); border-radius: 3px; padding: 0 5px; font-size: 12px; font-family: var(--serif); }
+/* Short windows: tighten the swara panel and strip so the trace keeps most of the height. */
+@media (max-height: 780px) {
+  main { padding: 10px 22px; gap: 12px; }
+  .stage { gap: 8px; }
+  .now { padding: 10px 18px; gap: 0 18px; grid-template-columns: 140px 1fr; }
+  .swara-big { font-size: 52px; }
+  .hint { min-height: 20px; font-size: 15px; padding-top: 4px; margin-top: 4px; }
+  .matra { font-size: 14px; padding: 3px 2px 2px; }
+  .matra .num { display: none; }
+}
 @media (max-width: 600px) {
+  .taal { flex-wrap: wrap; gap: 6px; }
+  .vibhag { flex: none; }
+  .matra { flex: none; min-width: 38px; font-size: 13px; }
   header { padding: 10px 14px 8px; }
   .brand { font-size: 26px; }
   .brand span:not(.dev), .status { display: none; }

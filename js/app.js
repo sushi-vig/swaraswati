@@ -239,9 +239,9 @@ function draw() {
 
   // swara lines
   const cm = cmap();
-  // When swara lines sit closer than ~11 px, label only Sa and Pa so the names stay readable.
+  // When swara lines sit closer than ~13 px, label only Sa and Pa so the names stay readable.
   const pxPer100 = chh / ((view.hi - view.lo) / 100);
-  const sparseLabels = pxPer100 < 11;
+  const sparseLabels = pxPer100 < 13;
   g.font = '600 13px "Cormorant Garamond", Georgia, serif'; g.textBaseline = 'middle';
   for (let oct = -4; oct <= 4; oct++) {
     for (const sw of SWARA_ORDER) {

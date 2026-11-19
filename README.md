@@ -69,8 +69,9 @@ tanpura and tabla are not picked up as "your voice".
 - **Mic on speakers**: the app cancels its own sound from the microphone. The capture worklet takes the mic and the
   app's master output, decimates both to 16 kHz, and an NLMS adaptive filter (128 ms of taps) learns the speaker-to-mic
   path and subtracts the tanpura, shruti petti, swarmandal and drum before pitch detection. Unlike the browser's echo
-  canceller it never mutes the mic, so a voice sung over a loud stroke survives; the browser canceller is off by default
-  and available as a second checkbox. The Mic panel shows how many dB of bleed are being removed. A level meter shows what
+  canceller it never mutes the mic, so a voice sung over a loud stroke survives. The browser's own echo canceller is never
+  requested: while it removes a drone it notches a sung voice band by band, and the detector then reads the voice an
+  octave or two low (seen in a user's screen recording). The Mic panel shows how many dB of bleed are being removed. A level meter shows what
   the detector receives against the noise floor it must clear. Add `?bleed=0.5` to the address and press Test tone to
   simulate a speaker-to-mic path for checking. The app knows when every drum stroke fires and how
   long each one rings: a stroke's attack is masked, and while it rings a frame whose pitch jumped onto that drum head is

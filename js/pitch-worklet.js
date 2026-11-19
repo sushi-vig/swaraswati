@@ -6,7 +6,8 @@
 // a loud drum stroke is subtracted, not gated, so the voice sung over it survives. Pitch detection downstream only
 // needs the band below a few kHz, so 16 kHz costs nothing.
 //
-// Messages in: { port } (direct channel to the worker), { aec: bool }, { reset: true }.
+// Messages in: { port } (direct channel to the worker), { aec: bool }, { reset: true }, { diag: bool } (also stream the
+// decimated mic, reference and cleaned signal to the main thread, for the diagnostic capture).
 // Messages out (main port): { type: 'aec', erle, mic, ref } about twice a second.
 
 const TAPS = 2048;            // at 16 kHz: 128 ms, enough for output latency plus the first room reflections
@@ -37,11 +38,13 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.em = 0; this.ey = 0; this.ee = 0; this.er = 0; // smoothed energies: mic, echo estimate, error, reference
     this.chunk = new Float32Array(CHUNK); this.idx = 0;
     this.workerPort = null; this.statCount = 0;
+    this.diag = false; this.dm = null; this.dr = null; this.de = null; this.di = 0;
     this.port.onmessage = (e) => {
       const d = e.data || {};
       if (d.port) this.workerPort = d.port;
       if (typeof d.aec === 'boolean') { this.aec = d.aec; if (!d.aec) this.w.fill(0); }
       if (d.mu) this.mu = d.mu; if (d.floor != null) this.floor = d.floor;
+      if (typeof d.diag === 'boolean') { this.diag = d.diag; this.di = 0; if (d.diag) { this.dm = new Float32Array(CHUNK); this.dr = new Float32Array(CHUNK); this.de = new Float32Array(CHUNK); } }
       if (d.reset) { this.w.fill(0); this.xb.fill(0); this.xpow = 0; this.em = this.ey = this.ee = this.er = 0; }
     };
   }
@@ -85,6 +88,13 @@ class CaptureProcessor extends AudioWorkletProcessor {
         out = e;
       }
       this._push(out, currentTime + (i + 1) / sampleRate);
+      if (this.diag) {
+        this.dm[this.di] = m; this.dr[this.di] = r; this.de[this.di] = out;
+        if (++this.di === CHUNK) {
+          this.port.postMessage({ type: 'diag', m: this.dm, r: this.dr, e: this.de, endTime: currentTime + (i + 1) / sampleRate }, [this.dm.buffer, this.dr.buffer, this.de.buffer]);
+          this.dm = new Float32Array(CHUNK); this.dr = new Float32Array(CHUNK); this.de = new Float32Array(CHUNK); this.di = 0;
+        }
+      }
     }
     if (++this.statCount >= 190) { // ~0.5 s at 48 kHz / 128-frame blocks
       this.statCount = 0;

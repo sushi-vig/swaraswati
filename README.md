@@ -77,7 +77,10 @@ tanpura and tabla are not picked up as "your voice".
   masked too (drawn faint, never scored). A voice that was already on that pitch before the stroke (Sa over a dayan tuned
   to Sa) is kept, and when a stroke's residual briefly spoils the detector the last clear pitch is held for up to 0.4 s,
   drawn faint and dimmed on the big display, so the voice does not vanish at every beat. Over Bluetooth the canceller's
-  reference is delayed by the reported output latency so the echo stays within the filter's reach.
+  reference is delayed by the reported output latency so the echo stays within the filter's reach. The Mic panel has a
+  device picker (the live mic's name is shown beside the browser-canceller line) and a **Record 30 s diagnostic** button
+  that saves one WAV with three channels (mic, app output, what the detector received) plus a `swdg` chunk of JSON: every
+  detector frame and its fate, the canceller's figures, the strokes, device and settings. `tools/diag-report.py` reads it.
 - **Fine-tune Sa** in cents; the tanpura, shruti petti and tabla follow.
 - **Two tanpuras** (A and B), each with a voice (female, male, male an octave below), first-string choice (Pa, Ma, Ni,
   komal Ni, Dha, Ga or none), volume, pluck speed, jawari, fine tune and pan. Run both panned apart for a fuller drone.
@@ -101,6 +104,7 @@ tanpura and tabla are not picked up as "your voice".
 
 | File | Role |
 | --- | --- |
+| `tools/diag-report.py` | Reads a diagnostic capture and reports levels, bleed removed, frame fates and voice loss around strokes. |
 | `js/pitch-worklet.js` | AudioWorklet: captures the mic, cancels the app's own output from it (NLMS at 16 kHz) and ships 512-sample chunks. |
 | `js/pitch-worker.js` | Web Worker running the McLeod Pitch Method (NSDF) with an adaptive noise-floor gate. Window 1024, hop 512 at 16 kHz, m(τ) via cumulative sums, no per-frame allocation. |
 | `js/pitch.js` | Glue: worklet → worker (direct MessageChannel, with main-thread fallback) → `onFrame`. |

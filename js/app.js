@@ -15,7 +15,7 @@ const LS = 'swaraswati-settings-v1';
 const TP_DEFAULT = (pan) => ({ voice: 'female', string: 'auto', vol: 0.3, tempo: 1, jawari: 0.6, fine: 0, pan });
 const defaults = { saMidi: 57, tuning: 'ji', raga: 'yaman', taal: 'teentaal', bpm: 80, tanpuraVol: 0.3, tablaVol: 0.7,
   tanpuras: [TP_DEFAULT(-0.3), Object.assign(TP_DEFAULT(0.3), { voice: 'male', tempo: 0.9, fine: 3 })],
-  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, gamaka: { hindustani: false, carnatic: true }, echoCancel: false, aec: true, recSplit: false, micV: 2, theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
+  sm: { auto: 0, range: 2, dir: 0, gap: 45, vol: 0.5 }, sensitivity: 0.6, latencyMs: 40, drone: 'auto', showAll: false, pattern: 'aroha', perNote: 1, zoom: 2, zoomScale: 3, saCents: 0, tradition: 'hindustani', shruti: { mode: 'SPl', vol: 0.35, tone: 0.5, fine: 0 }, gamaka: { hindustani: false, carnatic: true }, echoCancel: false, aec: true, recSplit: false, micV: 2, micDevice: '', theka: 0, layakari: 1, tablaEngine: 'samples', rampStep: 0, rampMax: 160 };
 const settings = Object.assign({}, defaults, load());
 // migrate pre-tanpura-pair settings
 if (!Array.isArray(settings.tanpuras) || settings.tanpuras.length !== 2) settings.tanpuras = defaults.tanpuras.map((t) => ({ ...t }));
@@ -94,9 +94,24 @@ async function ensureTracker() {
     // The canceller's filter reaches 128 ms. Over Bluetooth the sound leaves the speaker 150-250 ms after the app
     // produced it, so the reference is delayed by the reported output latency (less a margin) to stay in reach.
     tracker.setReferenceDelay(Math.max(0, (ctx.outputLatency || 0) - 0.03));
-    tracker.onStats = (d) => { aecStats = d; tracker.setReferenceDelay(Math.max(0, (ctx.outputLatency || 0) - 0.03)); };
+    tracker.onStats = (d) => { aecStats = d; tracker.setReferenceDelay(Math.max(0, (ctx.outputLatency || 0) - 0.03)); if (diag) diag.stats.push([+(ctx.currentTime - diag.t0).toFixed(2), +d.erle.toFixed(1), +d.mic.toFixed(5), +d.ref.toFixed(5)]); };
   }
   return tracker;
+}
+
+let micLabel = '';
+// List the microphones. Labels are only given once the mic permission has been granted, so this runs again after start.
+async function fillMicDevices() {
+  const sel = $('micDevice'); if (!sel || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch { return; }
+  sel.innerHTML = '';
+  const def = document.createElement('option'); def.value = ''; def.textContent = 'system default'; sel.appendChild(def);
+  devs.forEach((d, i) => {
+    if (!d.deviceId || d.deviceId === 'default') return;
+    const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || `Microphone ${i + 1}`; sel.appendChild(o);
+  });
+  sel.value = [...sel.options].some((o) => o.value === settings.micDevice) ? settings.micDevice : '';
 }
 
 async function toggleMic() {
@@ -111,10 +126,19 @@ async function toggleMic() {
     await ensureTracker();
     // Echo cancellation lets the browser subtract what this page plays (drones, drum) from the mic. Noise suppression
     // and gain control stay off: the first eats long held notes, the second moves the level the gate depends on.
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !!settings.echoCancel, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    const audio = { echoCancellation: !!settings.echoCancel, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    if (settings.micDevice) audio.deviceId = { exact: settings.micDevice };
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio }); } catch (err) {
+      if (!settings.micDevice) throw err;            // the chosen device is gone: fall back to the default and say so
+      delete audio.deviceId; settings.micDevice = ''; save();
+      micStream = await navigator.mediaDevices.getUserMedia({ audio });
+    }
     micSource = ctx.createMediaStreamSource(micStream);
-    const got = micStream.getAudioTracks()[0].getSettings ? micStream.getAudioTracks()[0].getSettings() : {};
-    $('micInfo').textContent = settings.echoCancel ? (got.echoCancellation === false ? 'browser canceller: not applied' : 'browser canceller: on') : '';
+    const track = micStream.getAudioTracks()[0];
+    const got = track.getSettings ? track.getSettings() : {};
+    micLabel = track.label || 'microphone';
+    $('micInfo').textContent = `mic: ${micLabel}` + (settings.echoCancel ? (got.echoCancellation === false ? ' · browser canceller: not applied' : ' · browser canceller: on') : '');
+    fillMicDevices();
     if (tracker) tracker.resetAec();
     if (testTone) stopTestTone();
     tracker.setInput(micSource);
@@ -165,6 +189,8 @@ function onFrame(fr) {
     heldFrames++; pushHist(t, lastClearC, 0, 1); guru.hold(t); lastVoicedT = t;
     if (current) { current.t = t; current.held = true; }
   };
+  // diagnostic capture: one row per frame -> [t, f0, clarity, rms, floor, state, strokeSince, strokeHz]
+  const dlog = (state) => { if (diag) diag.frames.push([+(t - diag.t0).toFixed(3), +fr.f0.toFixed(2), +fr.clarity.toFixed(3), +fr.rms.toFixed(5), +(fr.floor || 0).toFixed(5), state, st ? +st.since.toFixed(3) : null, st ? st.hz : null]); };
   if (fr.f0 > 0) {
     const raw = 1200 * Math.log2(fr.f0 / saHz());
     med.push(raw); if (med.length > 3) med.shift();
@@ -174,7 +200,7 @@ function onFrame(fr) {
       const continuous = recent && Math.abs(c - lastClearC) < 60;
       const drumLike = st.hz && pitchLike(fr.f0, st.hz) && !continuous;
       if (st.since < 0.08 || drumLike) {
-        maskedFrames++;
+        maskedFrames++; dlog(recent ? 'held' : 'masked');
         if (recent) hold(); else { pushHist(t, c, 0, 1); guru.hold(t); lastVoicedT = t; }
         return;
       }
@@ -189,16 +215,16 @@ function onFrame(fr) {
     const inRaga = !ragaSet || ragaSet.has(info.sw);
     pushHist(t, c, rInfo.dev);
     if (gap > 0.12 || Math.abs(c - lastCents) > (gam ? gam.span + 70 : 70)) registerOnset(t);
-    lastVoicedT = t; lastCents = c; lastClearT = t; lastClearC = c;
+    lastVoicedT = t; lastCents = c; lastClearT = t; lastClearC = c; dlog('clear');
     current = { t, cents: c, scored: sc, gam, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity, held: false };
     guru.addFrame(t, info, rInfo, inRaga, ragaCtx, gam);
     drill.addFrame(t, sc, info);
     if (detectSa) detectSa.push(fr.f0);
   } else if (st && recent && fr.rms > 0) {
     // unvoiced only because the stroke's residual spoiled the clarity: hold the voice through it
-    hold();
+    dlog('held'); hold();
   } else {
-    med.length = 0; gamaka.cut();
+    med.length = 0; gamaka.cut(); dlog('silent');
     pushHist(t, NaN, 0);
     current = null;
     guru.addSilence(t);
@@ -827,6 +853,65 @@ function downloadBlob(blob, name) {
   setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 2000);
 }
 
+// ---------- diagnostic capture ----------
+// Thirty seconds of evidence in one WAV: channel 1 what the mic heard (after the 55 Hz high-pass and decimation to
+// 16 kHz), channel 2 the app's own output as the canceller saw it, channel 3 what the detector actually received.
+// A 'swdg' chunk after the audio holds JSON: every detector frame and its fate (clear / masked / held / silent), the
+// canceller's figures, the drum strokes, the device and the settings. Standard players ignore the extra chunk.
+let diag = null;
+const DIAG_SEC = 30;
+function startDiag() {
+  if (!tracker || !(micOn || testTone)) { $('diagInfo').textContent = 'start the mic first, then the instruments, then this'; return; }
+  diag = { m: [], r: [], e: [], frames: [], stats: [], t0: ctx.currentTime, began: new Date().toISOString(), masked0: maskedFrames, held0: heldFrames };
+  tracker.onDiag = (d) => { if (diag) { diag.m.push(d.m); diag.r.push(d.r); diag.e.push(d.e); } };
+  tracker.setDiag(true);
+  const tick = () => { if (!diag) return; const left = Math.ceil(DIAG_SEC - (ctx.currentTime - diag.t0)); if (left <= 0) finishDiag(); else { $('btnDiag').textContent = `Recording… ${left} s (stop)`; diag.timer = setTimeout(tick, 250); } };
+  $('btnDiag').classList.add('rec'); $('diagInfo').textContent = 'sing as you normally would, with the instruments playing';
+  tick();
+}
+function finishDiag() {
+  const d = diag; if (!d) return; diag = null; clearTimeout(d.timer);
+  tracker.setDiag(false); tracker.onDiag = null;
+  $('btnDiag').classList.remove('rec'); $('btnDiag').textContent = 'Record 30 s diagnostic';
+  const n = d.m.reduce((a, c) => a + c.length, 0);
+  if (!n) { $('diagInfo').textContent = 'nothing captured'; return; }
+  const chans = [d.m, d.r, d.e].map((parts) => { const out = new Float32Array(n); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; });
+  const track = micStream && micStream.getAudioTracks()[0];
+  const meta = {
+    app: 'swaraswati-diag', version: 2, began: d.began, seconds: +(n / tracker.rate).toFixed(2), rate: tracker.rate,
+    channels: ['mic (after 55 Hz high-pass)', 'reference (app output)', 'cleaned (what the detector heard)'],
+    context: { sampleRate: ctx.sampleRate, outputLatency: ctx.outputLatency, baseLatency: ctx.baseLatency, refDelay: tracker.refDelaySec },
+    mic: { label: micLabel, settings: track && track.getSettings ? track.getSettings() : null, testTone: !!testTone },
+    ua: navigator.userAgent,
+    settings: { aec: settings.aec, echoCancel: settings.echoCancel, sensitivity: settings.sensitivity, latencyMs: settings.latencyMs, saMidi: settings.saMidi, saCents: settings.saCents, tradition: settings.tradition, raga: settings.raga, taal: settings.taal, bpm: settings.bpm, tablaVol: settings.tablaVol, tablaEngine: settings.tablaEngine, tanpuras: tanpuras.map((t) => ({ running: t.running, vol: t.vol })), shruti: shruti ? shruti.running : false, tablaRunning: !!(tabla && tabla.running) },
+    counts: { frames: d.frames.length, masked: maskedFrames - d.masked0, held: heldFrames - d.held0, clear: d.frames.filter((f) => f[5] === 'clear').length, silent: d.frames.filter((f) => f[5] === 'silent').length },
+    frameColumns: ['t', 'f0', 'clarity', 'rms', 'floor', 'state', 'strokeSince', 'strokeHz'],
+    frames: d.frames,
+    statColumns: ['t', 'erle_dB', 'micRms', 'refRms'],
+    stats: d.stats,
+    strokes: tabla ? tabla.strokeTimes.filter((s) => s.t >= d.t0 - 1).map((s) => ({ t: +(s.t - d.t0).toFixed(3), hz: s.hz, ring: s.ring })) : [],
+  };
+  const blob = wavBlob(chans, tracker.rate, { swdg: JSON.stringify(meta) });
+  downloadBlob(blob, `swaraswati-diag-${stamp()}.wav`);
+  $('diagInfo').textContent = `saved ${meta.seconds} s · ${meta.counts.clear} clear, ${meta.counts.held} held, ${meta.counts.masked} masked, ${meta.counts.silent} silent frames · send me the file`;
+}
+// 16-bit PCM WAV from Float32 channels, with optional extra RIFF chunks { id4: text }.
+function wavBlob(chans, rate, extra = {}) {
+  const nch = chans.length, n = chans[0].length, dataBytes = n * nch * 2;
+  const enc = new TextEncoder(), extras = Object.entries(extra).map(([id, text]) => [id, enc.encode(text)]);
+  const extraBytes = extras.reduce((a, [, b]) => a + 8 + b.length + (b.length & 1), 0);
+  const buf = new ArrayBuffer(44 + dataBytes + extraBytes), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < 4; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + dataBytes + extraBytes, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nch, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * nch * 2, true); v.setUint16(32, nch * 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, dataBytes, true);
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) { const x = Math.max(-1, Math.min(1, chans[c][i])); v.setInt16(o, x < 0 ? x * 32768 : x * 32767, true); o += 2; }
+  for (const [id, bytes] of extras) { str(o, id); v.setUint32(o + 4, bytes.length, true); new Uint8Array(buf, o + 8, bytes.length).set(bytes); o += 8 + bytes.length + (bytes.length & 1); }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 // ---------- recording ----------
 let recDest = null, recMicGain = null, recorder = null, recChunks = [], recStart = 0, recTimer = null, recCount = 0;
 function recGraph() {
@@ -961,6 +1046,9 @@ function init() {
   $('showAll').onchange = (e) => { settings.showAll = e.target.checked; save(); };
   $('btnTest').onclick = toggleTestTone;
   $('btnMic').onclick = toggleMic;
+  $('micDevice').onchange = async (e) => { settings.micDevice = e.target.value; save(); if (micOn) { await toggleMic(); await toggleMic(); } };
+  if (navigator.mediaDevices) { fillMicDevices(); navigator.mediaDevices.ondevicechange = fillMicDevices; }
+  $('btnDiag').onclick = () => (diag ? finishDiag() : startDiag());
   $('btnTabla').onclick = toggleTabla;
   $('taalSel').onchange = (e) => { settings.taal = e.target.value; save(); buildTaalStrip(); applyAudioSettings(); if (drill.active) stopDrill(); };
   $('bpm').oninput = (e) => onBpm(e.target.value); $('bpmNum').onchange = (e) => onBpm(e.target.value);
@@ -1019,4 +1107,4 @@ init();
 
 // Debug hook (harmless in production): inspect live state from the console.
 window.swaraswatiTune = (opts) => { if (tracker) tracker.tuneAec(opts); return opts; };
-window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, heldFrames, refDelay: tracker ? tracker.refDelaySec : null, aec: aecStats, aecOn: settings.aec, toneCents: testTone ? Math.round(testTone.curCents) : null, trackerRate: tracker ? tracker.rate : null, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });
+window.swaraswatiDebug = () => ({ now: ctx ? ctx.currentTime : null, lastFrame, current, hCount, micOn, testTone: !!testTone, tablaEvents: tabla ? tabla.events.length : 0, kit: tabla ? { ready: tabla.kit.ready, failed: tabla.kit.failed, played: tabla.kit.played, rate: tabla.kit.dayanRate } : null, tanpuras: tanpuras.map((t) => t.running), shruti: shruti ? { running: shruti.running, voices: shruti.voices.length, mode: shruti.mode } : null, naming: SWARA_NAMES.g + '/' + SWARA_NAMES.n, gam: current && current.gam ? { anchor: Math.round(current.gam.anchor), basis: current.gam.basis, span: Math.round(current.gam.span), rate: Math.round(current.gam.rate * 10) / 10, anchored: current.gam.anchored } : null, gamakaOn: gamakaOn(), maskedFrames, heldFrames, micLabel, diag: !!diag, refDelay: tracker ? tracker.refDelaySec : null, aec: aecStats, aecOn: settings.aec, toneCents: testTone ? Math.round(testTone.curCents) : null, trackerRate: tracker ? tracker.rate : null, strokeTimes: tabla ? tabla.strokeTimes.length : 0, outputLatency: ctx ? ctx.outputLatency : null, lastStroke: tabla && tabla.strokeTimes.length ? tabla.strokeTimes[tabla.strokeTimes.length - 1] : null, echoCancel: settings.echoCancel, micInfo: $('micInfo').textContent, tpKit: tanpuras[0] ? { ready: tanpuras[0].kit.ready, failed: tanpuras[0].kit.failed, strings: tanpuras[0].kit.strings.map((x) => ({ role: x.role, name: x.name, hz: Math.round(x.hz * 10) / 10, gain: Math.round(x.gain * 100) / 100, onset: Math.round(x.onset * 1000) })), played: tanpuras[0].kit.played, sampledPlucks: tanpuras.map((t) => t.sampledPlucks), voices: tanpuras.map((t) => t.voiceId) } : null, strings: swarmandal ? swarmandal.hz.length : 0, plucks: swarmandal ? swarmandal.plucks : 0 });

@@ -27,6 +27,7 @@ export class PitchTracker {
       const d = e.data; if (!d) return;
       if (d.type === 'samples') this.worker.postMessage(d, [d.samples.buffer]);
       else if (d.type === 'aec') { this.stats = d; if (this.onStats) this.onStats(d); }
+      else if (d.type === 'diag') { if (this.onDiag) this.onDiag(d); }
     };
     this.worker.onmessage = (e) => { if (this.onFrame) this.onFrame(e.data); };
     // Keep the node alive in the graph without producing sound.
@@ -60,6 +61,8 @@ export class PitchTracker {
   setAec(on) { this.node.port.postMessage({ aec: !!on }); }
   tuneAec(opts) { this.node.port.postMessage(opts); }
   resetAec() { this.node.port.postMessage({ reset: true }); }
+  // Stream the decimated mic, reference and cleaned signal (512-sample chunks) to onDiag.
+  setDiag(on) { this.node.port.postMessage({ diag: !!on }); }
 
   // sensitivity 0..1 -> absolute RMS gate (higher sensitivity = lower gate).
   setSensitivity(s) {

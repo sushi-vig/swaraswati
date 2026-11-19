@@ -93,9 +93,11 @@
     <div class="panel">
       <h3>Mic</h3>
       <div class="row"><label>Sensitivity</label><input type="range" id="sens" min="0" max="1" step="0.01" class="grow"></div>
+      <div class="row tight"><label>Device</label><select id="micDevice" class="grow" title="Which microphone the app listens to. If you plugged in an external mic, pick it here; the label beside the browser-canceller line shows which one is live."><option value="">system default</option></select></div>
       <div class="row tight"><label>Mic level</label><div class="micmeter grow" title="What the detector receives: the bar is your level, the tick is the noise floor it must clear"><div id="micFloor"></div><div id="micLevel"></div></div><span class="info mono" id="micText">—</span></div>
       <div class="row tight"><label title="The app subtracts its own tanpura, shruti petti, swarmandal and drum from the microphone before listening to you. It never mutes the mic."><input type="checkbox" id="aecOn"> cancel the app's own sound from the mic</label><span class="info mono" id="aecText"></span></div>
       <div class="row tight"><label title="The browser's echo canceller. It can mute your voice for a moment after each loud drum stroke, so it is off by default; try it only on a speaker setup where the in-app canceller is not enough."><input type="checkbox" id="echoCancel"> also use the browser's echo canceller</label><span class="info" id="micInfo"></span></div>
+      <div class="row tight"><button id="btnDiag" class="small" title="Records 30 seconds of what the microphone heard, what the canceller removed and what the detector decided, as one WAV file you can send for diagnosis. Start the mic and the instruments first, then sing as you normally would.">Record 30 s diagnostic</button><span class="info" id="diagInfo"></span></div>
       <div class="row">
         <label><input type="checkbox" id="showAll"> show all 12 swara lines</label>
         <label title="Oscillating notes (kampita, andolan) are judged by the pitch the swing is anchored on, not frame by frame"><input type="checkbox" id="gamakaAware"> gamaka-aware scoring</label>

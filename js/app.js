@@ -144,7 +144,7 @@ async function toggleMic() {
     if (tracker) tracker.resetAec();
     if (testTone) stopTestTone();
     tracker.setInput(micSource);
-    micOn = true;
+    micOn = true; voiceLvl = -1;
     connectMicToRec();
     $('btnMic').textContent = 'Stop mic'; $('btnMic').classList.add('on');
     setStatus();
@@ -172,6 +172,7 @@ const onsets = [];        // { t, offsetMs|null }
 const med = [];
 let lastVoicedT = -1, lastCents = NaN, current = null, detectSa = null, maskedFrames = 0, heldFrames = 0;
 let lastClearT = -1, lastClearC = NaN; // last frame that was neither masked nor held: the voice we are sure of
+let voiceLvl = -1;                       // running level (RMS) of clear voiced frames, for the quiet-mic hint
 const HOLD_SEC = 0.4;                   // how long a stroke may hide the voice before the display lets go of it
 // Does f0 sit within 60 cents of hz, or of its octave above or below (a ringing head is often read an octave off)?
 const pitchLike = (f0, hz) => [0.5, 1, 2].some((m) => Math.abs(1200 * Math.log2(f0 / (hz * m))) < 60);
@@ -183,7 +184,10 @@ function onFrame(fr) {
   // is masked only if its pitch matches the drum head AND the voice was not already there: the dayan is tuned to Sa,
   // and a singer holding Sa through a theka must not be hidden for every stroke. A reading that jumps onto the drum
   // pitch at the stroke is the drum; one that was on that pitch before the stroke is the voice.
-  const st = (micOn || testTone) && tabla ? tabla.strokeAt(t, (ctx.outputLatency || settings.latencyMs / 1000) + 0.005) : null;
+  // Only when the mic can hear the drum at all: with the canceller on, that is known (it is actively removing bleed);
+  // with it off we assume speakers. On headphones or a far mic no frame is ever masked or held.
+  const bleedHeard = !settings.aec || (aecStats && aecStats.active);
+  const st = bleedHeard && (micOn || testTone) && tabla ? tabla.strokeAt(t, (ctx.outputLatency || settings.latencyMs / 1000) + 0.005) : null;
   const recent = lastClearT >= 0 && t - lastClearT < HOLD_SEC;
   // Bridge a short hole the stroke made: draw the last clear pitch faint, keep the big display and the guru's note
   // alive, score nothing. Masked frames and clarity dropouts under a stroke both go through here.
@@ -218,6 +222,7 @@ function onFrame(fr) {
     pushHist(t, c, rInfo.dev);
     if (gap > 0.12 || Math.abs(c - lastCents) > (gam ? gam.span + 70 : 70)) registerOnset(t);
     lastVoicedT = t; lastCents = c; lastClearT = t; lastClearC = c; dlog('clear');
+    voiceLvl = voiceLvl < 0 ? fr.rms : voiceLvl + 0.05 * (fr.rms - voiceLvl);
     current = { t, cents: c, scored: sc, gam, hz: fr.f0, info, rInfo, inRaga, clarity: fr.clarity, held: false };
     guru.addFrame(t, info, rInfo, inRaga, ragaCtx, gam);
     drill.addFrame(t, sc, info);
@@ -411,10 +416,21 @@ function updateMicMeter() {
   const pos = (v) => Math.max(0, Math.min(100, (db(v) + 60) / 60 * 100));
   const lv = $('micLevel'), live = (micOn || testTone) && ctx && ctx.currentTime - fr.t < 0.5;
   lv.style.width = `${live ? pos(fr.rms) : 0}%`; lv.classList.toggle('voiced', live && fr.f0 > 0);
-  if (fr.floor != null) $('micFloor').style.left = `${pos(fr.floor * 1.8)}%`;
-  $('micText').textContent = live ? `${Math.round(db(fr.rms))} dB${fr.f0 > 0 ? ' · voice' : fr.rms > (fr.floor || 0) * 1.8 ? ' · unclear' : ' · quiet'}` : '—';
+  const up = Math.pow(10, (16 - 10 * settings.sensitivity) / 20);
+  if (fr.floor != null) $('micFloor').style.left = `${pos(fr.floor * up)}%`;
+  $('micText').textContent = live ? `${Math.round(db(fr.rms))} dB${fr.f0 > 0 ? ' · voice' : fr.rms > (fr.floor || 0) * up ? ' · unclear' : ' · quiet'}` : '—';
   const st = aecStats, el = $('aecText');
-  if (el) el.textContent = live && st && st.on ? (st.ref > 1e-4 ? `bleed removed: ${Math.max(0, Math.round(st.erle))} dB` : 'bleed removed: (nothing playing)') : live && settings.aec ? 'bleed removed: —' : '';
+  if (el) el.textContent = live && st && st.on ? (st.ref <= 1e-4 ? 'canceller: nothing playing' : st.active ? `bleed removed: ${Math.max(0, Math.round(st.erle))} dB` : 'canceller idle: the mic does not hear the app') : live && settings.aec ? 'canceller: —' : '';
+  const hint = $('micHint');
+  if (hint) {
+    let msg = '';
+    if (micOn && voiceLvl > 0 && lastVoicedT > 0 && ctx.currentTime - lastVoicedT < 3) {
+      const v = db(voiceLvl), f = db(fr.floor || 1e-5);
+      if (v < -36) msg = `your voice reaches this mic at ${Math.round(v)} dB, which is quiet: raise the input level in System Settings › Sound › Input, or sing closer`;
+      else if (v - f < 12 && st && st.active) msg = 'the instruments are nearly as loud as your voice at the mic: turn them down or sing closer';
+    }
+    hint.textContent = msg;
+  }
 }
 function updateNow() {
   updateMicMeter();

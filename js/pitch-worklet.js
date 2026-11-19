@@ -8,10 +8,12 @@
 //
 // Messages in: { port } (direct channel to the worker), { aec: bool }, { reset: true }, { diag: bool } (also stream the
 // decimated mic, reference and cleaned signal to the main thread, for the diagnostic capture).
-// Messages out (main port): { type: 'aec', erle, mic, ref } about twice a second.
+// Messages out (main port): { type: 'aec', on, active, converged, erle, mic, ref, rate } about twice a second.
+// `active` says whether the cancelled signal is actually in use: it is, only while it proves to carry less energy
+// than the raw mic. Otherwise the raw mic goes to the detector untouched.
 
 const TAPS = 2048;            // at 16 kHz: 128 ms, enough for output latency plus the first room reflections
-const MU = 0.6;               // NLMS step; scaled down (to a quarter) while the voice dominates the error
+const MU = 0.6;               // NLMS step; scaled by how much of the mic the echo estimate explains (see process)
 const CHUNK = 512;            // samples per message to the worker (32 ms at 16 kHz)
 
 class Biquad {                // 2nd-order lowpass, used as the anti-alias filter before decimation
@@ -31,23 +33,27 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.lpM = [new Biquad(5500, sampleRate), new Biquad(5500, sampleRate)];
     this.lpR = [new Biquad(5500, sampleRate), new Biquad(5500, sampleRate)];
     this.phase = 0;
-    this.aec = true; this.mu = MU; this.floor = 0.25;
+    this.aec = true; this.mu = MU; this.floor = 0.1;
     this.w = new Float32Array(TAPS);
     this.xb = new Float32Array(TAPS * 2); // reference history, written twice so the last TAPS samples are contiguous
     this.xi = 0; this.xpow = 0;
-    this.em = 0; this.ey = 0; this.ee = 0; this.er = 0; // smoothed energies: mic, echo estimate, error, reference
+    this.em = 0; this.ey = 0; this.ee = 0; this.er = 0; // fast energies (~30 ms): mic, echo estimate, error, reference
+    this.sm = 0; this.se = 0;                           // slow energies (~1 s): mic and error, for the proof-of-benefit test
+    this.converged = false;                             // has the filter ever removed 3 dB over a second?
+    this.mix = 0;                                       // 0 = raw mic goes out, 1 = cancelled signal goes out; ramps
     this.chunk = new Float32Array(CHUNK); this.idx = 0;
     this.workerPort = null; this.statCount = 0;
     this.diag = false; this.dm = null; this.dr = null; this.de = null; this.di = 0;
     this.port.onmessage = (e) => {
       const d = e.data || {};
       if (d.port) this.workerPort = d.port;
-      if (typeof d.aec === 'boolean') { this.aec = d.aec; if (!d.aec) this.w.fill(0); }
+      if (typeof d.aec === 'boolean') { this.aec = d.aec; if (!d.aec) this._reset(); }
       if (d.mu) this.mu = d.mu; if (d.floor != null) this.floor = d.floor;
       if (typeof d.diag === 'boolean') { this.diag = d.diag; this.di = 0; if (d.diag) { this.dm = new Float32Array(CHUNK); this.dr = new Float32Array(CHUNK); this.de = new Float32Array(CHUNK); } }
-      if (d.reset) { this.w.fill(0); this.xb.fill(0); this.xpow = 0; this.em = this.ey = this.ee = this.er = 0; }
+      if (d.reset) this._reset();
     };
   }
+  _reset() { this.w.fill(0); this.xb.fill(0); this.xpow = 0; this.em = this.ey = this.ee = this.er = 0; this.sm = this.se = 0; this.converged = false; this.mix = 0; }
   _push(x, endTimeOfSample) {
     this.chunk[this.idx++] = x;
     if (this.idx === CHUNK) {
@@ -67,7 +73,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
       this.phase = 0;
       // reference history: newest sample at xb[xi] and xb[xi + TAPS]; the window xb[xi .. xi + TAPS) is contiguous
       this.xi = this.xi === 0 ? TAPS - 1 : this.xi - 1;
-      const old = xb[this.xi + TAPS]; // sample leaving the window (it sat at xi+TAPS before the overwrite below shifts the window)
+      const old = xb[this.xi + TAPS];
       xb[this.xi] = r; xb[this.xi + TAPS] = r;
       this.xpow += r * r - old * old; if (this.xpow < 0) this.xpow = 0;
       let out = m;
@@ -76,16 +82,27 @@ class CaptureProcessor extends AudioWorkletProcessor {
         let y = 0;
         for (let k = 0; k < TAPS; k++) y += w[k] * xb[xi + k];
         const e = m - y;
-        // smoothed energies for the step-size control and the readout
-        const a = 0.002;
+        const a = 0.002, b = 0.00006;
         this.em += a * (m * m - this.em); this.ey += a * (y * y - this.ey); this.ee += a * (e * e - this.ee); this.er += a * (r * r - this.er);
-        // adapt: full step when the echo estimate explains the mic, a tenth of it when the voice dominates the error
+        this.sm += b * (m * m - this.sm); this.se += b * (e * e - this.se);
+        // Proof of benefit: the cancelled signal is used only while it carries at least 1 dB less energy than the raw
+        // mic over the last second. A filter with nothing to cancel (headphones, a far mic) is then bypassed, so its
+        // adaptation noise never reaches the detector. The two are crossfaded over ~60 ms to avoid clicks.
+        const helping = this.sm > 1e-9 && this.se < this.sm * 0.79;
+        if (helping && this.se < this.sm * 0.5) this.converged = true;
+        this.mix += ((helping ? 1 : 0) - this.mix) * 0.001;
+        // Adaptation. ratio = how much of the mic the echo estimate explains. Before convergence adapt at a tenth of
+        // full speed even when the voice dominates, so a real echo path is found within seconds. Once converged, freeze
+        // while the voice dominates (double talk) so a sustained note on a drone's pitch is not learned as "echo".
         if (this.xpow > 1e-7) {
           const ratio = this.ey / (this.ey + this.ee + 1e-12);
-          const g = this.mu * Math.max(this.floor, ratio) * e / (this.xpow + 1e-6);
-          if (g !== 0) for (let k = 0; k < TAPS; k++) w[k] += g * xb[xi + k];
+          let step = this.converged ? (ratio < 0.2 ? 0 : ratio) : Math.max(this.floor, ratio);
+          if (step > 0) {
+            const g = this.mu * step * e / (this.xpow + 1e-6);
+            for (let k = 0; k < TAPS; k++) w[k] += g * xb[xi + k];
+          }
         }
-        out = e;
+        out = m + this.mix * (e - m);
       }
       this._push(out, currentTime + (i + 1) / sampleRate);
       if (this.diag) {
@@ -98,8 +115,15 @@ class CaptureProcessor extends AudioWorkletProcessor {
     }
     if (++this.statCount >= 190) { // ~0.5 s at 48 kHz / 128-frame blocks
       this.statCount = 0;
-      const erle = this.em > 1e-10 && this.ee > 1e-12 ? 10 * Math.log10(this.em / this.ee) : 0;
-      this.port.postMessage({ type: 'aec', on: this.aec && !!ref, erle, mic: Math.sqrt(this.em), ref: Math.sqrt(this.er), rate: this.rate });
+      // A real speaker-to-mic path is compact: most of the filter's energy sits in a few blocks of taps around the
+      // delay. A filter that is quietly cancelling a sung note on the drone's own pitch is a long sinusoid spread evenly
+      // over every tap. If the "helping" filter is that diffuse, it is eating the voice: throw it away.
+      let total = 0, peak = 0;
+      for (let b0 = 0; b0 < TAPS; b0 += 64) { let bsum = 0; for (let k = b0; k < b0 + 64; k++) bsum += w[k] * w[k]; total += bsum; if (bsum > peak) peak = bsum; }
+      this.compact = total > 0 ? peak / total : 1;
+      if (this.mix > 0.5 && total > 0 && this.compact < 0.12) { this.w.fill(0); this.sm = this.se = 0; this.mix = 0; this.converged = false; this.discarded = (this.discarded || 0) + 1; }
+      const erle = this.sm > 1e-10 && this.se > 1e-12 ? 10 * Math.log10(this.sm / this.se) : 0;
+      this.port.postMessage({ type: 'aec', on: this.aec && !!ref, active: this.mix > 0.5, converged: this.converged, compact: this.compact, discarded: this.discarded || 0, erle, mic: Math.sqrt(this.em), ref: Math.sqrt(this.er), rate: this.rate });
     }
     return true;
   }

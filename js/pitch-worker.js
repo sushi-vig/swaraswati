@@ -12,7 +12,11 @@ let x = new Float32Array(W);
 let cum = new Float64Array(W + 1);
 let nsdf, maxLag, minLag;
 
-const params = { absRms: 0.006, floorMult: 1.8, clarityOn: 0.80, clarityOff: 0.62, keyThresh: 0.8 };
+// The loudness gate is relative to the room: a note must start `marginDb` above the measured noise floor and may
+// sustain 6 dB lower. Nothing is tied to an absolute level, so a quiet microphone works as long as the voice clears the
+// room by that margin. `absMin` only keeps digital silence from counting as a note.
+const params = { marginDb: 10, absMin: 0.0002, clarityOn: 0.80, clarityOff: 0.62, keyThresh: 0.8 };
+let lastF0 = 0, sinceVoiced = 0; // for pitch continuity: prefer a candidate near the previous note over an octave jump
 let floor = 0.003, voiced = false;
 // Noise floor = minimum RMS over the last 10-20 s (two 10 s buckets): breaths reset it, a steady drone or fan is absorbed.
 let bucketLen = 470, bucketPos = 0, curMin = Infinity, prevMin = Infinity;
@@ -38,7 +42,7 @@ self.onmessage = (e) => {
   } else if (d.type === 'params') {
     Object.assign(params, d.params);
   } else if (d.type === 'reset') {
-    total = 0; sinceLast = 0; wpos = 0; voiced = false; floor = 0.003; curMin = prevMin = Infinity; bucketPos = 0;
+    total = 0; sinceLast = 0; wpos = 0; voiced = false; floor = 0.003; curMin = prevMin = Infinity; bucketPos = 0; lastF0 = 0; sinceVoiced = 99;
   }
 };
 
@@ -69,8 +73,9 @@ function analyze(x) {
   const winMin = Math.min(prevMin, curMin);
   if (winMin !== Infinity) floor = Math.max(1e-5, winMin);   // no quiet frames lately: keep the last floor
   // Starting a note needs to clear the floor comfortably; sustaining one needs less, so soft tails are kept.
-  const gate = voiced ? Math.max(params.absRms * 0.6, floor * 1.2) : Math.max(params.absRms, floor * params.floorMult);
-  if (rms < gate) { voiced = false; return { f0: 0, clarity: 0, rms }; }
+  const up = Math.pow(10, params.marginDb / 20);
+  const gate = voiced ? Math.max(params.absMin * 0.6, floor * up * 0.5) : Math.max(params.absMin, floor * up);
+  if (rms < gate) { voiced = false; sinceVoiced++; return { f0: 0, clarity: 0, rms }; }
 
   // NSDF. m(tau) via cumulative sums; only the autocorrelation is O(W * maxLag).
   const totalSq = cum[W];
@@ -92,12 +97,20 @@ function analyze(x) {
     while (tau < maxLag && nsdf[tau] > 0) { if (nsdf[tau] > mv) { mv = nsdf[tau]; mi = tau; } tau++; }
     if (mi > 0) { peaks.push(mi); if (mv > best) best = mv; }
   }
-  if (!peaks.length) { voiced = false; return { f0: 0, clarity: 0, rms }; }
+  if (!peaks.length) { voiced = false; sinceVoiced++; return { f0: 0, clarity: 0, rms }; }
 
   const thr = params.keyThresh * best;
   let sel = -1;
   for (const p of peaks) { if (p >= minLag && nsdf[p] >= thr) { sel = p; break; } }
-  if (sel < 0) { voiced = false; return { f0: 0, clarity: 0, rms }; }
+  // Continuity: a drone or drum mixed with the voice can push the strongest peak an octave away for a frame or two.
+  // If a candidate within 120 cents of the previous note is nearly as strong, keep the line continuous.
+  if (lastF0 > 0 && sinceVoiced < 4) {
+    const want = sr / lastF0;
+    let near = -1, nearV = 0;
+    for (const p of peaks) { if (p >= minLag && Math.abs(1200 * Math.log2(p / want)) < 120 && nsdf[p] > nearV) { near = p; nearV = nsdf[p]; } }
+    if (near > 0 && near !== sel && nearV >= Math.max(params.clarityOff, 0.75 * best)) sel = near;
+  }
+  if (sel < 0) { voiced = false; sinceVoiced++; return { f0: 0, clarity: 0, rms }; }
 
   // Parabolic interpolation around the chosen peak.
   let T = sel, clarity = nsdf[sel];
@@ -112,8 +125,8 @@ function analyze(x) {
   }
   const f0 = sr / T;
   const need = voiced ? params.clarityOff : params.clarityOn;
-  if (clarity < need || f0 < MIN_HZ || f0 > MAX_HZ) { voiced = false; return { f0: 0, clarity, rms }; }
+  if (clarity < need || f0 < MIN_HZ || f0 > MAX_HZ) { voiced = false; sinceVoiced++; return { f0: 0, clarity, rms }; }
   if (!voiced) runStart = frameNo;
-  voiced = true;
+  voiced = true; lastF0 = f0; sinceVoiced = 0;
   return { f0, clarity: Math.min(1, clarity), rms };
 }

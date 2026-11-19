@@ -64,9 +64,9 @@ export class PitchTracker {
   // Stream the decimated mic, reference and cleaned signal (512-sample chunks) to onDiag.
   setDiag(on) { this.node.port.postMessage({ diag: !!on }); }
 
-  // sensitivity 0..1 -> absolute RMS gate (higher sensitivity = lower gate).
+  // sensitivity 0..1 -> how far above the room's noise floor a note must rise: 16 dB at 0, 6 dB at 1 (10 dB at 0.6).
   setSensitivity(s) {
-    const absRms = 0.0025 * Math.pow(12, 1 - s); // 0.03 .. 0.0025
-    this.worker.postMessage({ type: 'params', params: { absRms } });
+    const marginDb = 16 - 10 * Math.max(0, Math.min(1, s));
+    this.worker.postMessage({ type: 'params', params: { marginDb } });
   }
 }

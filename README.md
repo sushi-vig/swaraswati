@@ -68,7 +68,14 @@ tanpura and tabla are not picked up as "your voice".
   true; the drill scores the anchor. Plain slides and steady notes are untouched.
 - **Mic on speakers**: the app cancels its own sound from the microphone. The capture worklet takes the mic and the
   app's master output, decimates both to 16 kHz, and an NLMS adaptive filter (128 ms of taps) learns the speaker-to-mic
-  path and subtracts the tanpura, shruti petti, swarmandal and drum before pitch detection. Unlike the browser's echo
+  path and subtracts the tanpura, shruti petti, swarmandal and drum before pitch detection. The cancelled signal is used
+  only while it proves to carry less energy than the raw mic (otherwise the raw mic passes through untouched, so on
+  headphones or a far mic the canceller is idle and harmless); once converged the filter freezes while the voice
+  dominates; and a filter that turns out diffuse rather than compact, the signature of cancelling a sung note on the
+  drone's own pitch instead of a room path, is discarded. The loudness gate is relative to the measured room floor
+  (Sensitivity sets the margin, 16 to 6 dB), never to an absolute level, so a quiet microphone works; the Mic panel
+  says so when the voice reaches the mic too quietly. The detector prefers a candidate near the previous note over an
+  octave jump. Stroke masking runs only when the canceller shows the mic actually hears the drum. Unlike the browser's echo
   canceller it never mutes the mic, so a voice sung over a loud stroke survives. The browser's own echo canceller is never
   requested: while it removes a drone it notches a sung voice band by band, and the detector then reads the voice an
   octave or two low (seen in a user's screen recording). The Mic panel shows how many dB of bleed are being removed. A level meter shows what
